@@ -993,6 +993,53 @@ stg_threadStatuszh ( gcptr tso )
   p_ first_code,                                        \
   p_ alt_code
 
+INFO_TABLE_RET(stg_catch_retry_handle_abort_frame, CATCH_RETRY_FRAME,
+               CATCH_RETRY_FRAME_FIELDS(W_,P_,
+                                        info_ptr, p1, p2,
+                                        running_alt_code,
+                                        first_code,
+                                        alt_code))
+    return (P_ ret)
+{
+    W_ r;
+    gcptr trec, outer;
+    gcptr handler;
+
+    trec = StgTSO_trec(CurrentTSO);
+    outer  = StgTRecHeader_enclosing_trec(trec);
+
+    /* Checks for abort handlers */
+    ("ptr" handler) = ccall stmGetNextAbortHandler(MyCapability() "ptr", trec "ptr");
+    if (handler != END_STM_HANDLER_QUEUE) {
+        /* Run current handler */
+        jump stg_ap_v_fast
+            (CATCH_RETRY_FRAME_FIELDS(,,info_ptr, p1, p2,
+                                      running_alt_code,
+                                      first_code,
+                                      alt_code))
+            (StgSTMHandler_code(handler));
+    }
+
+    P_ new_trec;
+    ("ptr" new_trec) = ccall stmStartTransaction(MyCapability() "ptr",
+                                                 outer "ptr");
+    StgTSO_trec(CurrentTSO) = new_trec;
+    if (running_alt_code != 0) {
+        jump stg_ap_v_fast
+            (CATCH_RETRY_FRAME_FIELDS(,,stg_catch_retry_frame_info, p1, p2,
+                                      running_alt_code,
+                                      first_code,
+                                      alt_code))
+            (alt_code);
+    } else {
+        jump stg_ap_v_fast
+            (CATCH_RETRY_FRAME_FIELDS(,,stg_catch_retry_frame_info, p1, p2,
+                                      running_alt_code,
+                                      first_code,
+                                      alt_code))
+            (first_code);
+    }
+}
 
 INFO_TABLE_RET(stg_catch_retry_frame, CATCH_RETRY_FRAME,
                CATCH_RETRY_FRAME_FIELDS(W_,P_,
@@ -1005,27 +1052,31 @@ INFO_TABLE_RET(stg_catch_retry_frame, CATCH_RETRY_FRAME,
     unwind Sp = Sp + SIZEOF_StgCatchRetryFrame;
     W_ r;
     gcptr trec, outer;
-    gcptr handler, hcode, arg;
+    gcptr handler;
 
     trec = StgTSO_trec(CurrentTSO);
     outer  = StgTRecHeader_enclosing_trec(trec);
     (r) = ccall stmCommitNestedTransaction(MyCapability() "ptr", trec "ptr");
     if (r != 0) {
         // Succeeded (either first branch or second branch)
-        /* Run extra commit handlers */
-        trec = StgTSO_trec(CurrentTSO);
-        handler = StgTRecHeader_next_commit_handler(trec);
-    commit_handler_2:
-        if (handler != END_COMMIT_HANDLER_QUEUE) {
-          hcode = StgSTMCommitHandler_code(handler);
-          call stg_ap_v_fast(hcode);
-          handler = StgSTMCommitHandler_next_handler(handler);
-          goto commit_handler_2;
-        }
+
         StgTSO_trec(CurrentTSO) = outer;
         return (ret);
     } else {
         // Did not commit: re-execute
+
+        /* Checks for abort handlers */
+        ("ptr" handler) = ccall stmGetNextAbortHandler(MyCapability() "ptr", trec "ptr");
+        if (handler != END_STM_HANDLER_QUEUE) {
+            /* Run current handler */
+            jump stg_ap_v_fast
+                (CATCH_RETRY_FRAME_FIELDS(,,stg_catch_retry_handle_abort_frame_info, p1, p2,
+                                          running_alt_code,
+                                          first_code,
+                                          alt_code))
+                (StgSTMHandler_code(handler));
+        }
+
         P_ new_trec;
         ("ptr" new_trec) = ccall stmStartTransaction(MyCapability() "ptr",
                                                            outer "ptr");
@@ -1057,6 +1108,68 @@ INFO_TABLE_RET(stg_catch_retry_frame, CATCH_RETRY_FRAME,
     p_ code,                                                            \
     p_ result
 
+INFO_TABLE_RET(stg_atomically_handle_commit_frame, ATOMICALLY_FRAME,
+               // layout of the frame, and bind the field names
+               ATOMICALLY_FRAME_FIELDS(W_,P_,
+                                       info_ptr, p1, p2,
+                                       code,
+                                       next_invariant,
+                                       frame_result))
+    return (P_ result) // value returned to the frame
+{
+    gcptr trec;
+    gcptr handler;
+
+    trec   = StgTSO_trec(CurrentTSO);
+    ("ptr" handler) = ccall stmGetNextCommitHandler(MyCapability() "ptr", trec "ptr");
+
+    if (handler != END_STM_HANDLER_QUEUE) {
+        /* Run current commit handler */
+        jump stg_ap_v_fast
+            (ATOMICALLY_FRAME_FIELDS(,,info_ptr,p1,p2,
+                                     code,next_invariant,frame_result))
+            (StgSTMHandler_code(handler));
+    }
+
+    StgTSO_trec(CurrentTSO) = NO_TREC;
+    return (frame_result);
+}
+
+INFO_TABLE_RET(stg_atomically_handle_abort_frame, ATOMICALLY_FRAME,
+               // layout of the frame, and bind the field names
+               ATOMICALLY_FRAME_FIELDS(W_,P_,
+                                       info_ptr, p1, p2,
+                                       code,
+                                       next_invariant,
+                                       frame_result))
+    return (P_ result) // value returned to the frame
+{
+    gcptr trec;
+    gcptr handler;
+
+    trec   = StgTSO_trec(CurrentTSO);
+    ("ptr" handler) = ccall stmGetNextAbortHandler(MyCapability() "ptr", trec "ptr");
+
+    if (handler != END_STM_HANDLER_QUEUE) {
+        /* Run current abort handler */
+        jump stg_ap_v_fast
+            (ATOMICALLY_FRAME_FIELDS(,,info_ptr,p1,p2,
+                                     code,next_invariant,frame_result))
+            (StgSTMHandler_code(handler));
+    }
+
+    ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr",
+                                             NO_TREC "ptr");
+    StgTSO_trec(CurrentTSO) = trec;
+    next_invariant = END_INVARIANT_CHECK_QUEUE;
+
+    jump stg_ap_v_fast
+        // push the StgAtomicallyFrame again: the code generator is
+        // clever enough to only assign the fields that have changed.
+        (ATOMICALLY_FRAME_FIELDS(,,stg_atomically_frame_info,p1,p2,
+                                 code,next_invariant,frame_result))
+        (code);
+}
 
 INFO_TABLE_RET(stg_atomically_frame, ATOMICALLY_FRAME,
                // layout of the frame, and bind the field names
@@ -1068,7 +1181,7 @@ INFO_TABLE_RET(stg_atomically_frame, ATOMICALLY_FRAME,
 {
     W_ valid;
     gcptr trec, outer, q;
-    gcptr handler, hcode, arg;
+    gcptr handler;
 
     trec   = StgTSO_trec(CurrentTSO);
     outer  = StgTRecHeader_enclosing_trec(trec);
@@ -1081,15 +1194,14 @@ INFO_TABLE_RET(stg_atomically_frame, ATOMICALLY_FRAME,
     if (valid != 0) {
         /* Transaction was valid: commit succeeded */
 
-        /* Run extra commit handlers */
-        trec = StgTSO_trec(CurrentTSO);
-        handler = StgTRecHeader_next_commit_handler(trec);
-    commit_handler_1:
-        if (handler != END_COMMIT_HANDLER_QUEUE) {
-            hcode = StgSTMCommitHandler_code(handler);
-            call stg_ap_v_fast(hcode);
-            handler = StgSTMCommitHandler_next_handler(handler);
-            goto commit_handler_1;
+        /* Check for commit handlers */
+        ("ptr" handler) = ccall stmGetNextCommitHandler(MyCapability() "ptr", trec "ptr");
+        if (handler != END_STM_HANDLER_QUEUE) {
+            /* Run current commit handler */
+            jump stg_ap_v_fast
+                (ATOMICALLY_FRAME_FIELDS(,,stg_atomically_handle_commit_frame_info,p1,p2,
+                                         code,next_invariant,frame_result))
+                (StgSTMHandler_code(handler));
         }
 
         StgTSO_trec(CurrentTSO) = NO_TREC;
@@ -1097,16 +1209,14 @@ INFO_TABLE_RET(stg_atomically_frame, ATOMICALLY_FRAME,
     } else {
         /* Transaction was not valid: try again */
 
-        /* Run extra commit handlers */
-        trec = StgTSO_trec(CurrentTSO);
-        handler = StgTRecHeader_next_abort_handler(trec);
-    abort_handlers:
-        if (handler != END_ABORT_HANDLER_QUEUE) {
-            hcode = StgSTMAbortHandler_code(handler);
-            arg = StgSTMAbortHandler_arg(handler);
-            call stg_ap_pv_fast(hcode, arg);
-            handler = StgSTMAbortHandler_next_handler(handler);
-            goto abort_handlers;
+        /* Check for abort handlers */
+        ("ptr" handler) = ccall stmGetNextAbortHandler(MyCapability() "ptr", trec "ptr");
+        if (handler != END_STM_HANDLER_QUEUE) {
+            /* Run current abort handler */
+            jump stg_ap_v_fast
+                (ATOMICALLY_FRAME_FIELDS(,,stg_atomically_handle_abort_frame_info,p1,p2,
+                                         code,next_invariant,frame_result))
+                (StgSTMHandler_code(handler));
         }
 
         ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr",
@@ -1121,29 +1231,6 @@ INFO_TABLE_RET(stg_atomically_frame, ATOMICALLY_FRAME,
             (code);
     }
 }
-
-/* INFO_TABLE_RET(stg_atomically_commit_handler_frame, ATOMICALLY_FRAME, */
-/*                // layout of the frame, and bind the field names */
-/*                ATOMICALLY_FRAME_FIELDS(W_,P_, */
-/*                                        info_ptr, p1, p2, */
-/*                                        code, */
-/*                                        next_invariant, */
-/*                                        frame_result)) */
-/*     return (/\* no return values *\/) */
-/* { */
-/* 	  gcptr handler, trec; */
-/* 		/\* Run extra commit handlers *\/ */
-/* 		trec = StgTSO_trec(CurrentTSO); */
-/* 		handler = StgTRecHeader_next_commit_handler(trec); */
-/* 		handler = StgSTMCommitHandler_next_handler(handler); */
-/* 		if (handler != END_COMMIT_HANDLER_QUEUE) { */
-/* 			  code = StgSTMCommitHandler_code(handler); */
-/* 				jump stg_ap_v_fast(code); */
-/* 				goto commit_handlers; */
-/* 		} */
-/* 		StgTSO_trec(CurrentTSO) = NO_TREC; */
-/* 		return (frame_result); */
-/* } */
 
 INFO_TABLE_RET(stg_atomically_waiting_frame, ATOMICALLY_FRAME,
                // layout of the frame, and bind the field names
@@ -1195,27 +1282,19 @@ INFO_TABLE_RET(stg_catch_stm_frame, CATCH_STM_FRAME,
     return (P_ ret)
 {
     W_ r, trec, outer;
-    gcptr handler, hcode, arg;
+    gcptr handler, hcode;
 
     trec = StgTSO_trec(CurrentTSO);
     outer  = StgTRecHeader_enclosing_trec(trec);
     (r) = ccall stmCommitNestedTransaction(MyCapability() "ptr", trec "ptr");
     if (r != 0) {
         /* Commit succeeded */
-        /* Run extra commit handlers */
-        trec = StgTSO_trec(CurrentTSO);
-        handler = StgTRecHeader_next_commit_handler(trec);
-    commit_handler_3:
-        if (handler != END_COMMIT_HANDLER_QUEUE) {
-          hcode = StgSTMCommitHandler_code(handler);
-          call stg_ap_v_fast(hcode);
-          handler = StgSTMCommitHandler_next_handler(handler);
-          goto commit_handler_3;
-        }
+
         StgTSO_trec(CurrentTSO) = outer;
         return (ret);
     } else {
         /* Commit failed */
+
         W_ new_trec;
         ("ptr" new_trec) = ccall stmStartTransaction(MyCapability() "ptr", outer "ptr");
         StgTSO_trec(CurrentTSO) = new_trec;
@@ -1432,18 +1511,16 @@ abort_pop_stack:
     jump stg_ap_v_fast [R1];
 }
 
-stg_addAbortHandlerzh (P_ arg,   /* :: a          */
-                       P_ abort  /* :: a -> IO () */)
+stg_addAbortHandlerzh (P_ abort  /* :: IO () */)
 {
     P_ trec;
 
-    MAYBE_GC_PP (stg_addAbortHandlerzh, arg, abort);
+    MAYBE_GC_P (stg_addAbortHandlerzh, abort);
 
     trec = StgTSO_trec(CurrentTSO);
     ccall stmAddAbortHandler(MyCapability() "ptr",
                              trec "ptr",
-                             abort "ptr",
-                             arg "ptr");
+                             abort "ptr");
 
     return ();
 }

@@ -2420,8 +2420,7 @@ primop  CatchSTMOp "catchSTM#" GenPrimOp
    has_side_effects = True
 
 primop  AddAbortHandlerOp "addAbortHandler#" GenPrimOp
-      (a)
-   -> (a -> (State# RealWorld -> (# State# RealWorld, b #)))
+      (State# RealWorld -> (# State# RealWorld, a #))
    -> (State# RealWorld -> State# RealWorld)
    with
    strictness  = { \ _arity -> mkClosedStrictSig [lazyApply2Dmd, topDmd] topRes }

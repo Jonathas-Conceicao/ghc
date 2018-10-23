@@ -137,21 +137,22 @@ StgBool stmValidateNestOfTransactions(Capability *cap, StgTRecHeader *trec);
    is actually still valid.
 */
 
-StgSTMAbortHandler *stmGetNextAbortHandler(Capability *cap, 
-                                           StgTRecHeader *trec);
-
-
-StgSTMCommitHandler *stmGetNextCommitHandler(Capability *cap, 
-                                             StgTRecHeader *trec);
-
 void stmAddAbortHandler(Capability *cap, 
                         StgTRecHeader *trec,
-                        StgClosure *code,
-                        StgClosure *arg);
+                        StgClosure *code);
 
-void stmAddCommitHandler(Capability *cap, 
+void stmAddCommitHandler(Capability *cap,
                          StgTRecHeader *trec,
                          StgClosure *code);
+
+void stmPassHandlers(StgTRecHeader *trec,
+                     StgTRecHeader *to);
+
+StgSTMHandler *stmGetNextAbortHandler(Capability *cap,
+                                      StgTRecHeader *trec);
+
+StgSTMHandler *stmGetNextCommitHandler(Capability *cap,
+                                       StgTRecHeader *trec);
 
 /*
  * Test whether the current transaction context is valid and, if so,
@@ -213,8 +214,7 @@ void stmWriteTVar(Capability *cap,
 /* NULLs */
 
 #define END_STM_WATCH_QUEUE ((StgTVarWatchQueue *)(void *)&stg_END_STM_WATCH_QUEUE_closure)
-#define END_ABORT_HANDLER_QUEUE ((StgSTMAbortHandler *)(void *)&stg_END_ABORT_HANDLER_QUEUE_closure)
-#define END_COMMIT_HANDLER_QUEUE ((StgSTMCommitHandler *)(void *)&stg_END_COMMIT_HANDLER_QUEUE_closure)
+#define END_STM_HANDLER_QUEUE ((StgSTMHandler *)(void *)&stg_END_STM_HANDLER_QUEUE_closure)
 #define END_STM_CHUNK_LIST ((StgTRecChunk *)(void *)&stg_END_STM_CHUNK_LIST_closure)
 
 #define NO_TREC ((StgTRecHeader *)(void *)&stg_NO_TREC_closure)

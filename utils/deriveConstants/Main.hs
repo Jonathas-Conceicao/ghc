@@ -491,12 +491,8 @@ wanteds os = concat
           ,closureField C "StgAtomicallyFrame" "code"
           ,closureField C "StgAtomicallyFrame" "result"
 
-          ,closureField C "StgSTMAbortHandler" "code"
-          ,closureField C "StgSTMAbortHandler" "arg"
-          ,closureField C "StgSTMAbortHandler" "next_handler"
-
-          ,closureField C "StgSTMCommitHandler" "code"
-          ,closureField C "StgSTMCommitHandler" "next_handler"
+          ,closureField C "StgSTMHandler" "code"
+          ,closureField C "StgSTMHandler" "next_handler"
 
           ,closureField C "StgTRecHeader" "enclosing_trec"
           ,closureField C "StgTRecHeader" "next_abort_handler"

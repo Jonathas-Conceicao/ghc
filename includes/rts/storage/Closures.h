@@ -348,26 +348,19 @@ typedef enum {
   TREC_WAITING,       /* Transaction currently waiting */
 } TRecState;
 
-typedef struct StgSTMAbortHandler_ {
-  StgHeader                  header;
-  StgClosure                 *code;
-  StgClosure                 *arg;
-  struct StgSTMAbortHandler_ *next_handler;
-} StgSTMAbortHandler;
-
-typedef struct StgSTMCommitHandler_ {
-  StgHeader                   header;
-  StgClosure                  *code;
-  struct StgSTMCommitHandler_ *next_handler;
-} StgSTMCommitHandler;
+typedef struct StgSTMHandler_ {
+  StgHeader               header;
+  StgClosure             *code;
+  struct StgSTMHandler_  *next_handler;
+} StgSTMHandler;
 
 struct StgTRecHeader_ {
-  StgHeader                  header;
-  struct StgTRecHeader_     *enclosing_trec;
-  StgTRecChunk              *current_chunk;
-  StgSTMAbortHandler        *next_abort_handler;
-  StgSTMCommitHandler       *next_commit_handler;
-  TRecState                  state;
+  StgHeader               header;
+  struct StgTRecHeader_  *enclosing_trec;
+  StgTRecChunk           *current_chunk;
+  StgSTMHandler          *next_abort_handler;
+  StgSTMHandler          *next_commit_handler;
+  TRecState               state;
 };
 
 typedef struct {
