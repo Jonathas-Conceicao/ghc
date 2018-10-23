@@ -1004,13 +1004,24 @@ INFO_TABLE_RET(stg_catch_retry_frame, CATCH_RETRY_FRAME,
 {
     unwind Sp = Sp + SIZEOF_StgCatchRetryFrame;
     W_ r;
-    gcptr trec, outer, arg;
+    gcptr trec, outer;
+    gcptr handler, hcode, arg;
 
     trec = StgTSO_trec(CurrentTSO);
     outer  = StgTRecHeader_enclosing_trec(trec);
     (r) = ccall stmCommitNestedTransaction(MyCapability() "ptr", trec "ptr");
     if (r != 0) {
         // Succeeded (either first branch or second branch)
+        /* Run extra commit handlers */
+        trec = StgTSO_trec(CurrentTSO);
+        handler = StgTRecHeader_next_commit_handler(trec);
+    commit_handler_2:
+        if (handler != END_COMMIT_HANDLER_QUEUE) {
+          hcode = StgSTMCommitHandler_code(handler);
+          call stg_ap_v_fast(hcode);
+          handler = StgSTMCommitHandler_next_handler(handler);
+          goto commit_handler_2;
+        }
         StgTSO_trec(CurrentTSO) = outer;
         return (ret);
     } else {
@@ -1073,12 +1084,12 @@ INFO_TABLE_RET(stg_atomically_frame, ATOMICALLY_FRAME,
         /* Run extra commit handlers */
         trec = StgTSO_trec(CurrentTSO);
         handler = StgTRecHeader_next_commit_handler(trec);
-    commit_handlers:
+    commit_handler_1:
         if (handler != END_COMMIT_HANDLER_QUEUE) {
-            code = StgSTMCommitHandler_code(handler);
-            call stg_ap_v_fast(code);
+            hcode = StgSTMCommitHandler_code(handler);
+            call stg_ap_v_fast(hcode);
             handler = StgSTMCommitHandler_next_handler(handler);
-            goto commit_handlers;
+            goto commit_handler_1;
         }
 
         StgTSO_trec(CurrentTSO) = NO_TREC;
@@ -1184,12 +1195,23 @@ INFO_TABLE_RET(stg_catch_stm_frame, CATCH_STM_FRAME,
     return (P_ ret)
 {
     W_ r, trec, outer;
+    gcptr handler, hcode, arg;
 
     trec = StgTSO_trec(CurrentTSO);
     outer  = StgTRecHeader_enclosing_trec(trec);
     (r) = ccall stmCommitNestedTransaction(MyCapability() "ptr", trec "ptr");
     if (r != 0) {
         /* Commit succeeded */
+        /* Run extra commit handlers */
+        trec = StgTSO_trec(CurrentTSO);
+        handler = StgTRecHeader_next_commit_handler(trec);
+    commit_handler_3:
+        if (handler != END_COMMIT_HANDLER_QUEUE) {
+          hcode = StgSTMCommitHandler_code(handler);
+          call stg_ap_v_fast(hcode);
+          handler = StgSTMCommitHandler_next_handler(handler);
+          goto commit_handler_3;
+        }
         StgTSO_trec(CurrentTSO) = outer;
         return (ret);
     } else {
