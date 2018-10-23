@@ -1057,7 +1057,7 @@ INFO_TABLE_RET(stg_atomically_frame, ATOMICALLY_FRAME,
 {
     W_ valid;
     gcptr trec, outer, q;
-    gcptr handler, code;
+    gcptr handler, hcode, arg;
 
     trec   = StgTSO_trec(CurrentTSO);
     outer  = StgTRecHeader_enclosing_trec(trec);
@@ -1085,6 +1085,19 @@ INFO_TABLE_RET(stg_atomically_frame, ATOMICALLY_FRAME,
         return (frame_result);
     } else {
         /* Transaction was not valid: try again */
+
+        /* Run extra commit handlers */
+        trec = StgTSO_trec(CurrentTSO);
+        handler = StgTRecHeader_next_abort_handler(trec);
+    abort_handlers:
+        if (handler != END_ABORT_HANDLER_QUEUE) {
+            hcode = StgSTMAbortHandler_code(handler);
+            arg = StgSTMAbortHandler_arg(handler);
+            call stg_ap_pv_fast(hcode, arg);
+            handler = StgSTMAbortHandler_next_handler(handler);
+            goto abort_handlers;
+        }
+
         ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr",
                                                  NO_TREC "ptr");
         StgTSO_trec(CurrentTSO) = trec;
@@ -1098,6 +1111,28 @@ INFO_TABLE_RET(stg_atomically_frame, ATOMICALLY_FRAME,
     }
 }
 
+/* INFO_TABLE_RET(stg_atomically_commit_handler_frame, ATOMICALLY_FRAME, */
+/*                // layout of the frame, and bind the field names */
+/*                ATOMICALLY_FRAME_FIELDS(W_,P_, */
+/*                                        info_ptr, p1, p2, */
+/*                                        code, */
+/*                                        next_invariant, */
+/*                                        frame_result)) */
+/*     return (/\* no return values *\/) */
+/* { */
+/* 	  gcptr handler, trec; */
+/* 		/\* Run extra commit handlers *\/ */
+/* 		trec = StgTSO_trec(CurrentTSO); */
+/* 		handler = StgTRecHeader_next_commit_handler(trec); */
+/* 		handler = StgSTMCommitHandler_next_handler(handler); */
+/* 		if (handler != END_COMMIT_HANDLER_QUEUE) { */
+/* 			  code = StgSTMCommitHandler_code(handler); */
+/* 				jump stg_ap_v_fast(code); */
+/* 				goto commit_handlers; */
+/* 		} */
+/* 		StgTSO_trec(CurrentTSO) = NO_TREC; */
+/* 		return (frame_result); */
+/* } */
 
 INFO_TABLE_RET(stg_atomically_waiting_frame, ATOMICALLY_FRAME,
                // layout of the frame, and bind the field names
