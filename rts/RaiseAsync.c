@@ -1068,7 +1068,6 @@ raiseAsync(Capability *cap, StgTSO *tso, StgClosure *exception,
             StgTRecHeader *outer = trec -> enclosing_trec;
             debugTraceCap(DEBUG_stm, cap,
                           "found atomically block delivering async exception");
-            stmPassHandlers(trec, outer);
             stmAbortTransaction(cap, trec);
             stmFreeAbortedTRec(cap, trec);
             tso -> trec = outer;

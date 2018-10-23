@@ -1047,7 +1047,7 @@ static TRecEntry *get_entry_for(StgTRecHeader *trec, StgTVar *tvar, StgTRecHeade
 
 /*......................................................................*/
 
-void stmAddAbortHandler(Capability *cap, 
+void stmAddAbortHandler(Capability *cap,
                         StgTRecHeader *trec,
                         StgClosure *code) {
   StgSTMHandler *handler;
@@ -1072,7 +1072,7 @@ void stmAddAbortHandler(Capability *cap,
   return;
 }
 
-void stmAddCommitHandler(Capability *cap, 
+void stmAddCommitHandler(Capability *cap,
                          StgTRecHeader *trec,
                          StgClosure *code) {
   StgSTMHandler *handler;

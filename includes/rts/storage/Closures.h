@@ -355,12 +355,12 @@ typedef struct StgSTMHandler_ {
 } StgSTMHandler;
 
 struct StgTRecHeader_ {
-  StgHeader               header;
-  struct StgTRecHeader_  *enclosing_trec;
-  StgTRecChunk           *current_chunk;
-  StgSTMHandler          *next_abort_handler;
-  StgSTMHandler          *next_commit_handler;
-  TRecState               state;
+  StgHeader                  header;
+  struct StgTRecHeader_     *enclosing_trec;
+  StgTRecChunk              *current_chunk;
+  StgSTMHandler             *next_abort_handler;
+  StgSTMHandler             *next_commit_handler;
+  TRecState                  state;
 };
 
 typedef struct {

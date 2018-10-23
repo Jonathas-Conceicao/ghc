@@ -1059,7 +1059,6 @@ INFO_TABLE_RET(stg_catch_retry_frame, CATCH_RETRY_FRAME,
     (r) = ccall stmCommitNestedTransaction(MyCapability() "ptr", trec "ptr");
     if (r != 0) {
         // Succeeded (either first branch or second branch)
-
         StgTSO_trec(CurrentTSO) = outer;
         return (ret);
     } else {
@@ -1113,7 +1112,6 @@ INFO_TABLE_RET(stg_atomically_handle_commit_frame, ATOMICALLY_FRAME,
                ATOMICALLY_FRAME_FIELDS(W_,P_,
                                        info_ptr, p1, p2,
                                        code,
-                                       next_invariant,
                                        frame_result))
     return (P_ result) // value returned to the frame
 {
@@ -1127,7 +1125,7 @@ INFO_TABLE_RET(stg_atomically_handle_commit_frame, ATOMICALLY_FRAME,
         /* Run current commit handler */
         jump stg_ap_v_fast
             (ATOMICALLY_FRAME_FIELDS(,,info_ptr,p1,p2,
-                                     code,next_invariant,frame_result))
+                                     code,frame_result))
             (StgSTMHandler_code(handler));
     }
 
@@ -1140,7 +1138,6 @@ INFO_TABLE_RET(stg_atomically_handle_abort_frame, ATOMICALLY_FRAME,
                ATOMICALLY_FRAME_FIELDS(W_,P_,
                                        info_ptr, p1, p2,
                                        code,
-                                       next_invariant,
                                        frame_result))
     return (P_ result) // value returned to the frame
 {
@@ -1154,20 +1151,17 @@ INFO_TABLE_RET(stg_atomically_handle_abort_frame, ATOMICALLY_FRAME,
         /* Run current abort handler */
         jump stg_ap_v_fast
             (ATOMICALLY_FRAME_FIELDS(,,info_ptr,p1,p2,
-                                     code,next_invariant,frame_result))
+                                     code,frame_result))
             (StgSTMHandler_code(handler));
     }
 
     ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr",
                                              NO_TREC "ptr");
     StgTSO_trec(CurrentTSO) = trec;
-    next_invariant = END_INVARIANT_CHECK_QUEUE;
 
     jump stg_ap_v_fast
-        // push the StgAtomicallyFrame again: the code generator is
-        // clever enough to only assign the fields that have changed.
         (ATOMICALLY_FRAME_FIELDS(,,stg_atomically_frame_info,p1,p2,
-                                 code,next_invariant,frame_result))
+                                 code,frame_result))
         (code);
 }
 
@@ -1200,7 +1194,7 @@ INFO_TABLE_RET(stg_atomically_frame, ATOMICALLY_FRAME,
             /* Run current commit handler */
             jump stg_ap_v_fast
                 (ATOMICALLY_FRAME_FIELDS(,,stg_atomically_handle_commit_frame_info,p1,p2,
-                                         code,next_invariant,frame_result))
+                                         code,frame_result))
                 (StgSTMHandler_code(handler));
         }
 
@@ -1215,7 +1209,7 @@ INFO_TABLE_RET(stg_atomically_frame, ATOMICALLY_FRAME,
             /* Run current abort handler */
             jump stg_ap_v_fast
                 (ATOMICALLY_FRAME_FIELDS(,,stg_atomically_handle_abort_frame_info,p1,p2,
-                                         code,next_invariant,frame_result))
+                                         code,frame_result))
                 (StgSTMHandler_code(handler));
         }
 
@@ -1289,7 +1283,6 @@ INFO_TABLE_RET(stg_catch_stm_frame, CATCH_STM_FRAME,
     (r) = ccall stmCommitNestedTransaction(MyCapability() "ptr", trec "ptr");
     if (r != 0) {
         /* Commit succeeded */
-
         StgTSO_trec(CurrentTSO) = outer;
         return (ret);
     } else {
@@ -1479,7 +1472,7 @@ abort_pop_stack:
     outer  = StgTRecHeader_enclosing_trec(trec);
 
     if (frame_type == CATCH_RETRY_FRAME) {
-        // The retry reaches a CATCH_RETRY_FRAME before the atomic frame
+        // The abort reaches a CATCH_RETRY_FRAME before the atomic frame
         ASSERT(outer != NO_TREC);
         // Abort the transaction
         ccall stmAbortTransaction(MyCapability() "ptr", trec "ptr");
@@ -1491,16 +1484,6 @@ abort_pop_stack:
 
     // We've reached the ATOMICALLY_FRAME: retry the block
     ASSERT(frame_type == ATOMICALLY_FRAME);
-    if (outer != NO_TREC) {
-        // We called retry while checking invariants, so abort the current
-        // invariant check (merging its TVar accesses into the parents read
-        // set so we'll wait on them)
-        ccall stmAbortTransaction(MyCapability() "ptr", trec "ptr");
-        ccall stmFreeAbortedTRec(MyCapability() "ptr", trec "ptr");
-        trec = outer;
-        StgTSO_trec(CurrentTSO) = trec;
-        outer  = StgTRecHeader_enclosing_trec(trec);
-    }
     ASSERT(outer == NO_TREC);
 
     // Transaction was not valid: retry immediately

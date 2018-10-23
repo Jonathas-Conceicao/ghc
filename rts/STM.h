@@ -137,7 +137,7 @@ StgBool stmValidateNestOfTransactions(Capability *cap, StgTRecHeader *trec);
    is actually still valid.
 */
 
-void stmAddAbortHandler(Capability *cap, 
+void stmAddAbortHandler(Capability *cap,
                         StgTRecHeader *trec,
                         StgClosure *code);
 
