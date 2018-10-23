@@ -213,8 +213,8 @@ void stmWriteTVar(Capability *cap,
 /* NULLs */
 
 #define END_STM_WATCH_QUEUE ((StgTVarWatchQueue *)(void *)&stg_END_STM_WATCH_QUEUE_closure)
-#define END_ABORT_HANDLER_QUEUE ((StgInvariantCheckQueue *)(void *)&stg_END_ABORT_HANDLER_QUEUE_closure)
-#define END_COMMIT_HANDLER_QUEUE ((StgInvariantCheckQueue *)(void *)&stg_END_COMMIT_HANDLER_QUEUE_closure)
+#define END_ABORT_HANDLER_QUEUE ((StgSTMAbortHandler *)(void *)&stg_END_ABORT_HANDLER_QUEUE_closure)
+#define END_COMMIT_HANDLER_QUEUE ((StgSTMCommitHandler *)(void *)&stg_END_COMMIT_HANDLER_QUEUE_closure)
 #define END_STM_CHUNK_LIST ((StgTRecChunk *)(void *)&stg_END_STM_CHUNK_LIST_closure)
 
 #define NO_TREC ((StgTRecHeader *)(void *)&stg_NO_TREC_closure)

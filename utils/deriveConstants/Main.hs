@@ -499,8 +499,8 @@ wanteds os = concat
           ,closureField C "StgSTMCommitHandler" "next_handler"
 
           ,closureField C "StgTRecHeader" "enclosing_trec"
-          -- ,closureField C "StgTRecHeader" "next_abort_handler"
-          -- ,closureField C "StgTRecHeader" "next_commit_handler"
+          ,closureField C "StgTRecHeader" "next_abort_handler"
+          ,closureField C "StgTRecHeader" "next_commit_handler"
 
           ,closureSize  C "StgCatchSTMFrame"
           ,closureField C "StgCatchSTMFrame" "handler"

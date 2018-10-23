@@ -1057,6 +1057,7 @@ INFO_TABLE_RET(stg_atomically_frame, ATOMICALLY_FRAME,
 {
     W_ valid;
     gcptr trec, outer, q;
+    gcptr handler, code;
 
     trec   = StgTSO_trec(CurrentTSO);
     outer  = StgTRecHeader_enclosing_trec(trec);
@@ -1068,6 +1069,18 @@ INFO_TABLE_RET(stg_atomically_frame, ATOMICALLY_FRAME,
     (valid) = ccall stmCommitTransaction(MyCapability() "ptr", trec "ptr");
     if (valid != 0) {
         /* Transaction was valid: commit succeeded */
+
+        /* Run extra commit handlers */
+        trec = StgTSO_trec(CurrentTSO);
+        handler = StgTRecHeader_next_commit_handler(trec);
+    commit_handlers:
+        if (handler != END_COMMIT_HANDLER_QUEUE) {
+            code = StgSTMCommitHandler_code(handler);
+            call stg_ap_v_fast(code);
+            handler = StgSTMCommitHandler_next_handler(handler);
+            goto commit_handlers;
+        }
+
         StgTSO_trec(CurrentTSO) = NO_TREC;
         return (frame_result);
     } else {
