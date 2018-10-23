@@ -1308,6 +1308,90 @@ retry_pop_stack:
     }
 }
 
+stg_abortzh /* no arg list: explicit stack layout */
+{
+    W_ frame_type;
+    W_ frame;
+    W_ trec;
+    W_ outer;
+    W_ r;
+
+    // STM operations may allocate
+    MAYBE_GC_ (stg_abortzh); // NB. not MAYBE_GC(), we cannot make a
+                             // function call in an explicit-stack proc
+
+    // Find the enclosing ATOMICALLY_FRAME or CATCH_RETRY_FRAME
+abort_pop_stack:
+    SAVE_THREAD_STATE();
+    (frame_type) = ccall findRetryFrameHelper(MyCapability(), CurrentTSO "ptr");
+    LOAD_THREAD_STATE();
+    frame = Sp;
+    trec = StgTSO_trec(CurrentTSO);
+    outer  = StgTRecHeader_enclosing_trec(trec);
+
+    if (frame_type == CATCH_RETRY_FRAME) {
+        // The retry reaches a CATCH_RETRY_FRAME before the atomic frame
+        ASSERT(outer != NO_TREC);
+        // Abort the transaction
+        ccall stmAbortTransaction(MyCapability() "ptr", trec "ptr");
+        ccall stmFreeAbortedTRec(MyCapability() "ptr", trec "ptr");
+        StgTSO_trec(CurrentTSO) = outer;
+        Sp = Sp + SIZEOF_StgCatchRetryFrame;
+        goto abort_pop_stack;
+    }
+
+    // We've reached the ATOMICALLY_FRAME: retry the block
+    ASSERT(frame_type == ATOMICALLY_FRAME);
+    if (outer != NO_TREC) {
+        // We called retry while checking invariants, so abort the current
+        // invariant check (merging its TVar accesses into the parents read
+        // set so we'll wait on them)
+        ccall stmAbortTransaction(MyCapability() "ptr", trec "ptr");
+        ccall stmFreeAbortedTRec(MyCapability() "ptr", trec "ptr");
+        trec = outer;
+        StgTSO_trec(CurrentTSO) = trec;
+        outer  = StgTRecHeader_enclosing_trec(trec);
+    }
+    ASSERT(outer == NO_TREC);
+
+    // Transaction was not valid: retry immediately
+    ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr", outer "ptr");
+    StgTSO_trec(CurrentTSO) = trec;
+    Sp = frame;
+    R1 = StgAtomicallyFrame_code(frame);
+    jump stg_ap_v_fast [R1];
+}
+
+stg_addAbortHandlerzh (P_ arg,   /* :: a          */
+                       P_ abort  /* :: a -> IO () */)
+{
+    P_ trec;
+
+    MAYBE_GC_PP (stg_addAbortHandlerzh, arg, abort);
+
+    trec = StgTSO_trec(CurrentTSO);
+    ccall stmAddAbortHandler(MyCapability() "ptr",
+                             trec "ptr",
+                             abort "ptr",
+                             arg "ptr");
+
+    return ();
+}
+
+stg_addCommitHandlerzh (P_ commit /* :: IO () */)
+{
+    P_ trec;
+
+    MAYBE_GC_P (stg_addCommitHandlerzh, commit);
+
+    trec = StgTSO_trec(CurrentTSO);
+    ccall stmAddCommitHandler(MyCapability() "ptr",
+                              trec "ptr",
+                              commit "ptr");
+
+    return ();
+}
+
 stg_newTVarzh (P_ init)
 {
     W_ tv;

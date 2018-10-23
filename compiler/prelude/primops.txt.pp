@@ -2368,6 +2368,13 @@ primop  AtomicallyOp "atomically#" GenPrimOp
    out_of_line = True
    has_side_effects = True
 
+primop  AbortOp "abort#" GenPrimOp
+   State# RealWorld -> (# State# RealWorld, a #)
+   with
+   strictness  = { \ _arity -> mkClosedStrictSig [topDmd] botRes }
+   out_of_line = True
+   has_side_effects = True
+
 -- NB: retry#'s strictness information specifies it to throw an exception
 -- This lets the compiler perform some extra simplifications, since retry#
 -- will technically never return.
@@ -2409,6 +2416,23 @@ primop  CatchSTMOp "catchSTM#" GenPrimOp
                                                  , lazyApply2Dmd
                                                  , topDmd ] topRes }
                  -- See Note [Strictness for mask/unmask/catch]
+   out_of_line = True
+   has_side_effects = True
+
+primop  AddAbortHandlerOp "addAbortHandler#" GenPrimOp
+      (a)
+   -> (a -> (State# RealWorld -> (# State# RealWorld, b #)))
+   -> (State# RealWorld -> State# RealWorld)
+   with
+   strictness  = { \ _arity -> mkClosedStrictSig [lazyApply2Dmd, topDmd] topRes }
+   out_of_line = True
+   has_side_effects = True
+
+primop  AddCommitHandlerOp "addCommitHandler#" GenPrimOp
+      (State# RealWorld -> (# State# RealWorld, a #))
+   -> (State# RealWorld -> State# RealWorld)
+   with
+   strictness  = { \ _arity -> mkClosedStrictSig [lazyApply1Dmd, topDmd] topRes }
    out_of_line = True
    has_side_effects = True
 

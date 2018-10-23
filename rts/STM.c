@@ -400,6 +400,8 @@ static StgTRecHeader *new_stg_trec_header(Capability *cap,
 
   result -> enclosing_trec = enclosing_trec;
   result -> current_chunk = new_stg_trec_chunk(cap);
+  result -> next_abort_handler = END_ABORT_HANDLER_QUEUE;
+  result -> next_commit_handler = END_COMMIT_HANDLER_QUEUE;
 
   if (enclosing_trec == NO_TREC) {
     result -> state = TREC_ACTIVE;
@@ -469,6 +471,8 @@ static StgTRecHeader *alloc_stg_trec_header(Capability *cap,
     cap -> free_trec_headers = result -> enclosing_trec;
     result -> enclosing_trec = enclosing_trec;
     result -> current_chunk -> next_entry_idx = 0;
+    result -> next_abort_handler = END_ABORT_HANDLER_QUEUE;
+    result -> next_commit_handler = END_COMMIT_HANDLER_QUEUE;
     if (enclosing_trec == NO_TREC) {
       result -> state = TREC_ACTIVE;
     } else {
@@ -1039,6 +1043,76 @@ static TRecEntry *get_entry_for(StgTRecHeader *trec, StgTVar *tvar, StgTRecHeade
   } while (result == NULL && trec != NO_TREC);
 
   return result;
+}
+
+/*......................................................................*/
+
+void stmAddAbortHandler(Capability *cap, 
+                        StgTRecHeader *trec,
+                        StgClosure *code,
+                        StgClosure *arg) {
+  StgSTMAbortHandler *handler;
+  TRACE("%p : stmAddAbortHandler handler=%p arg=%p", trec, code, arg);
+  ASSERT(trec != NO_TREC);
+  ASSERT(trec -> state == TREC_ACTIVE ||
+         trec -> state == TREC_CONDEMNED);
+
+
+  // 1. Allocate an StgSTMAbortHandler
+
+  handler = (StgSTMAbortHandler *) allocate(cap, sizeofW(StgSTMAbortHandler));
+  TRACE("%p : StgSTMAbortHandler allocated handler=%p", trec, handler);
+  /* SET_HDR (invariant, &stg_ATOMIC_INVARIANT_info, CCS_SYSTEM); */
+  handler -> code = code;
+  handler -> arg = arg;
+
+  // 2.Link it to the current trec
+
+  handler -> next_handler = trec -> next_abort_handler;
+  trec -> next_abort_handler = handler;
+
+  TRACE("%p : StgSTMAbortHandler done", trec);
+}
+
+void stmAddCommitHandler(Capability *cap, 
+                         StgTRecHeader *trec,
+                         StgClosure *code) {
+  StgSTMCommitHandler *handler;
+  TRACE("%p : stmAddCommitHandler handler=%p", trec, code);
+  ASSERT(trec != NO_TREC);
+  ASSERT(trec -> state == TREC_ACTIVE ||
+         trec -> state == TREC_CONDEMNED);
+
+  // 1. Allocate an StgSTMCommitHandler
+
+  handler = (StgSTMCommitHandler *) allocate(cap, sizeofW(StgSTMCommitHandler));
+  TRACE("%p : StgSTMCommitHandler allocated handler=%p", trec, handler);
+  /* SET_HDR (invariant, &stg_ATOMIC_INVARIANT_info, CCS_SYSTEM); */
+  handler -> code = code;
+
+  // 2.Link it to the current trec
+
+  handler -> next_handler = trec -> next_commit_handler;
+  trec -> next_commit_handler = handler;
+
+  TRACE("%p : StgSTMCommitHandler done", trec);
+}
+
+
+// TODO implement this
+StgSTMAbortHandler *stmGetNextAbortHandler(Capability *cap, 
+                                           StgTRecHeader *trec) {
+  (void) cap;
+  (void) trec;
+  return NULL;
+}
+
+// TODO implement this
+StgSTMCommitHandler *stmGetNextCommitHandler(Capability *cap, 
+                                             StgTRecHeader *trec) {
+  (void) cap;
+  (void) trec;
+  return NULL;
 }
 
 /*......................................................................*/

@@ -70,6 +70,9 @@ module GHC.Conc.Sync
         -- * TVars
         , STM(..)
         , atomically
+        , newTBSTM
+        , addCommitHandler
+        , addAbortHandler
         , retry
         , orElse
         , throwSTM
@@ -728,6 +731,23 @@ unsafeIOToSTM (IO m) = STM m
 
 atomically :: STM a -> IO a
 atomically (STM m) = IO (\s -> (atomically# m) s )
+
+newTBSTM :: IO(Maybe a) -> (a -> IO ()) -> IO () -> STM a
+newTBSTM iomac undo commit = STM (\s -> expression s)
+  where
+    expression = unIO $ iomac >>= \mac -> case mac of
+      Just ac -> IO (\s -> (unSTM $ addHandlers ac) s)
+      Nothing -> IO (\s -> (abort# s))
+    addHandlers ac = do
+      addCommitHandler commit
+      addAbortHandler ac undo
+      return ac
+
+addCommitHandler :: IO () -> STM ()
+addCommitHandler commit = STM $ \s -> case (addCommitHandler# (unIO commit)) s of s' -> (# s', () #)
+
+addAbortHandler :: a -> (a -> IO ()) -> STM ()
+addAbortHandler arg abort = STM $ \s -> case (addAbortHandler# arg (unIO . abort)) s of s' -> (# s', () #)
 
 -- | Retry execution of the current memory transaction because it has seen
 -- values in 'TVar's which mean that it should not continue (e.g. the 'TVar's
