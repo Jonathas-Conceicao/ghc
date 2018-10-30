@@ -348,10 +348,19 @@ typedef enum {
   TREC_WAITING,       /* Transaction currently waiting */
 } TRecState;
 
+typedef struct StgTrecStats_ {
+  StgHeader header;
+  StgWord   num_aborts;
+  StgWord   num_nested_aborts;
+  StgWord   num_retrys;
+  StgWord   num_nested_retrys;
+} StgTrecStats;
+
 struct StgTRecHeader_ {
   StgHeader                  header;
   struct StgTRecHeader_     *enclosing_trec;
   StgTRecChunk              *current_chunk;
+  StgTrecStats              *stats;
   TRecState                  state;
 };
 

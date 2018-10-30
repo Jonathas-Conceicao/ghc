@@ -58,7 +58,7 @@ void stmPreGCHook(Capability *cap);
 
 /* Create and enter a new transaction context */
 
-StgTRecHeader *stmStartTransaction(Capability *cap, StgTRecHeader *outer);
+StgTRecHeader *stmStartTransaction(Capability *cap, StgTRecHeader *outer, StgTrecStats *stats);
 StgTRecHeader *stmStartNestedTransaction(Capability *cap, StgTRecHeader *outer
 );
 
@@ -191,6 +191,26 @@ void stmWriteTVar(Capability *cap,
                   StgTRecHeader *trec,
                   StgTVar *tvar, 
                   StgClosure *new_value);
+
+/* Returns the number of of times the transaction has been aborted
+ */
+StgWord stmReadTAborts(Capability *cap,
+                       StgTRecHeader *trec);
+
+/* Returns the number of of times a nested transaction has been aborted
+ */
+StgWord stmReadTNestedAborts(Capability *cap,
+                             StgTRecHeader *trec);
+
+/* Returns the number of of times the transaction has retried from the beginning
+ */
+StgWord stmReadTRetrys(Capability *cap,
+                       StgTRecHeader *trec);
+
+/* Returns the number of of times the transaction has retried from a nested transaction
+ */
+StgWord stmReadTNestedRetrys(Capability *cap,
+                             StgTRecHeader *trec);
 
 /*----------------------------------------------------------------------*/
 

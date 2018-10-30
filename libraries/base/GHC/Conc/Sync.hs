@@ -74,6 +74,10 @@ module GHC.Conc.Sync
         , orElse
         , throwSTM
         , catchSTM
+        , readTAborts
+        , readTNestedAborts
+        , readTRetrys
+        , readTNestedRetrys
         , TVar(..)
         , newTVar
         , newTVarIO
@@ -774,6 +778,22 @@ catchSTM (STM m) handler = STM $ catchSTM# m handler'
       handler' e = case fromException e of
                      Just e' -> unSTM (handler e')
                      Nothing -> raiseIO# e
+
+-- | Returns the number of aborts in the current transaction
+readTAborts :: STM Int
+readTAborts = STM $ \s -> case readTAborts# s of (# s', n #) -> (# s', I# n #)
+
+-- | Returns the number of nested aborts in the current transaction
+readTNestedAborts :: STM Int
+readTNestedAborts = STM $ \s -> case readTNestedAborts# s of (# s', n #) -> (# s', I# n #)
+
+-- | Returns the number of of times the transaction has retried from the beginning
+readTRetrys :: STM Int
+readTRetrys = STM $ \s -> case readTRetrys# s of (# s', n #) -> (# s', I# n #)
+
+-- | Returns the number of of times the transaction has retried from a nested transaction
+readTNestedRetrys :: STM Int
+readTNestedRetrys = STM $ \s -> case readTNestedRetrys# s of (# s', n #) -> (# s', I# n #)
 
 -- |Shared memory locations that support atomic memory transactions.
 data TVar a = TVar (TVar# RealWorld a)

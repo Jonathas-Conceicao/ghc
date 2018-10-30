@@ -1005,9 +1005,11 @@ INFO_TABLE_RET(stg_catch_retry_frame, CATCH_RETRY_FRAME,
     unwind Sp = Sp + SIZEOF_StgCatchRetryFrame;
     W_ r;
     gcptr trec, outer, arg;
+    gcptr stats;
 
     trec = StgTSO_trec(CurrentTSO);
     outer  = StgTRecHeader_enclosing_trec(trec);
+    stats  = StgTRecHeader_stats(trec);
     (r) = ccall stmCommitNestedTransaction(MyCapability() "ptr", trec "ptr");
     if (r != 0) {
         // Succeeded (either first branch or second branch)
@@ -1016,8 +1018,10 @@ INFO_TABLE_RET(stg_catch_retry_frame, CATCH_RETRY_FRAME,
     } else {
         // Did not commit: re-execute
         P_ new_trec;
+        StgTrecStats_num_nested_aborts(stats) = StgTrecStats_num_nested_aborts(stats) + 1;
         ("ptr" new_trec) = ccall stmStartTransaction(MyCapability() "ptr",
-                                                           outer "ptr");
+                                                     outer "ptr",
+                                                     stats "ptr");
         StgTSO_trec(CurrentTSO) = new_trec;
         if (running_alt_code != 0) {
             jump stg_ap_v_fast
@@ -1057,9 +1061,11 @@ INFO_TABLE_RET(stg_atomically_frame, ATOMICALLY_FRAME,
 {
     W_ valid;
     gcptr trec, outer, q;
+    gcptr stats;
 
     trec   = StgTSO_trec(CurrentTSO);
     outer  = StgTRecHeader_enclosing_trec(trec);
+    stats  = StgTRecHeader_stats(trec);
 
     /* Back at the atomically frame */
     frame_result = result;
@@ -1072,8 +1078,10 @@ INFO_TABLE_RET(stg_atomically_frame, ATOMICALLY_FRAME,
         return (frame_result);
     } else {
         /* Transaction was not valid: try again */
+        StgTrecStats_num_aborts(stats) = StgTrecStats_num_aborts(stats) + 1;
         ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr",
-                                                 NO_TREC "ptr");
+                                                 NO_TREC "ptr",
+                                                 stats "ptr");
         StgTSO_trec(CurrentTSO) = trec;
 
         jump stg_ap_v_fast
@@ -1106,7 +1114,7 @@ INFO_TABLE_RET(stg_atomically_waiting_frame, ATOMICALLY_FRAME,
             ();
     } else {
         /* Previous attempt is no longer valid: try again */
-        ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr", NO_TREC "ptr");
+        ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr", NO_TREC "ptr", NULL "ptr");
         StgTSO_trec(CurrentTSO) = trec;
 
         // change the frame header to stg_atomically_frame_info
@@ -1136,9 +1144,12 @@ INFO_TABLE_RET(stg_catch_stm_frame, CATCH_STM_FRAME,
     return (P_ ret)
 {
     W_ r, trec, outer;
+    gcptr stats;
 
     trec = StgTSO_trec(CurrentTSO);
     outer  = StgTRecHeader_enclosing_trec(trec);
+    stats  = StgTRecHeader_stats(trec);
+
     (r) = ccall stmCommitNestedTransaction(MyCapability() "ptr", trec "ptr");
     if (r != 0) {
         /* Commit succeeded */
@@ -1147,7 +1158,8 @@ INFO_TABLE_RET(stg_catch_stm_frame, CATCH_STM_FRAME,
     } else {
         /* Commit failed */
         W_ new_trec;
-        ("ptr" new_trec) = ccall stmStartTransaction(MyCapability() "ptr", outer "ptr");
+        StgTrecStats_num_nested_aborts(stats) = StgTrecStats_num_nested_aborts(stats) + 1;
+        ("ptr" new_trec) = ccall stmStartTransaction(MyCapability() "ptr", outer "ptr", stats "ptr");
         StgTSO_trec(CurrentTSO) = new_trec;
 
         jump stg_ap_v_fast
@@ -1181,7 +1193,7 @@ stg_atomicallyzh (P_ stm)
     frame_result = NO_TREC;
 
     /* Start the memory transcation */
-    ("ptr" new_trec) = ccall stmStartTransaction(MyCapability() "ptr", old_trec "ptr");
+    ("ptr" new_trec) = ccall stmStartTransaction(MyCapability() "ptr", old_trec "ptr", NULL "ptr");
     StgTSO_trec(CurrentTSO) = new_trec;
 
     jump stg_ap_v_fast
@@ -1209,9 +1221,12 @@ stg_catchSTMzh (P_ code    /* :: STM a */,
     /* Start a nested transaction to run the body of the try block in */
     W_ cur_trec;
     W_ new_trec;
+    W_ stats;
     cur_trec = StgTSO_trec(CurrentTSO);
+    stats  = StgTRecHeader_stats(cur_trec);
     ("ptr" new_trec) = ccall stmStartTransaction(MyCapability() "ptr",
-                                                 cur_trec "ptr");
+                                                 cur_trec "ptr",
+                                                 stats "ptr");
     StgTSO_trec(CurrentTSO) = new_trec;
 
     jump stg_ap_v_fast
@@ -1224,6 +1239,8 @@ stg_catchSTMzh (P_ code    /* :: STM a */,
 stg_catchRetryzh (P_ first_code, /* :: STM a */
                   P_ alt_code    /* :: STM a */)
 {
+    W_ trec;
+    W_ stats;
     W_ new_trec;
 
     // stmStartTransaction may allocate
@@ -1231,9 +1248,12 @@ stg_catchRetryzh (P_ first_code, /* :: STM a */
 
     STK_CHK_GEN();
 
+    trec = StgTSO_trec(CurrentTSO);
+    stats  = StgTRecHeader_stats(trec);
     /* Start a nested transaction within which to run the first code */
     ("ptr" new_trec) = ccall stmStartTransaction(MyCapability() "ptr",
-                                                 StgTSO_trec(CurrentTSO) "ptr");
+                                                 StgTSO_trec(CurrentTSO) "ptr",
+                                                 stats "ptr");
     StgTSO_trec(CurrentTSO) = new_trec;
 
     // push the CATCH_RETRY stack frame, and apply first_code to realWorld#
@@ -1252,6 +1272,7 @@ stg_retryzh /* no arg list: explicit stack layout */
     W_ trec;
     W_ outer;
     W_ r;
+    W_ stats;
 
     // STM operations may allocate
     MAYBE_GC_ (stg_retryzh); // NB. not MAYBE_GC(), we cannot make a
@@ -1265,16 +1286,18 @@ retry_pop_stack:
     frame = Sp;
     trec = StgTSO_trec(CurrentTSO);
     outer  = StgTRecHeader_enclosing_trec(trec);
+    stats  = StgTRecHeader_stats(trec);
 
     if (frame_type == CATCH_RETRY_FRAME) {
         // The retry reaches a CATCH_RETRY_FRAME before the atomic frame
         ASSERT(outer != NO_TREC);
+        StgTrecStats_num_nested_retrys(stats) = StgTrecStats_num_nested_retrys(stats) + 1;
         // Abort the transaction attempting the current branch
         ccall stmAbortTransaction(MyCapability() "ptr", trec "ptr");
         ccall stmFreeAbortedTRec(MyCapability() "ptr", trec "ptr");
         if (!StgCatchRetryFrame_running_alt_code(frame) != 0) {
             // Retry in the first branch: try the alternative
-            ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr", outer "ptr");
+            ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr", outer "ptr", stats "ptr");
             StgTSO_trec(CurrentTSO) = trec;
             StgCatchRetryFrame_running_alt_code(frame) = 1 :: CInt; // true;
             R1 = StgCatchRetryFrame_alt_code(frame);
@@ -1291,6 +1314,8 @@ retry_pop_stack:
     ASSERT(frame_type == ATOMICALLY_FRAME);
     ASSERT(outer == NO_TREC);
 
+    StgTrecStats_num_retrys(stats) = StgTrecStats_num_retrys(stats) + 1;
+
     (r) = ccall stmWait(MyCapability() "ptr", CurrentTSO "ptr", trec "ptr");
     if (r != 0) {
         // Transaction was valid: stmWait put us on the TVars' queues, we now block
@@ -1300,7 +1325,7 @@ retry_pop_stack:
         jump stg_block_stmwait [R3];
     } else {
         // Transaction was not valid: retry immediately
-        ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr", outer "ptr");
+        ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr", outer "ptr", stats "ptr");
         StgTSO_trec(CurrentTSO) = trec;
         Sp = frame;
         R1 = StgAtomicallyFrame_code(frame);
@@ -1324,6 +1349,45 @@ stg_newTVarzh (P_ init)
     return (tv);
 }
 
+stg_readTAbortszh ()
+{
+    P_ trec;
+    W_ result;
+
+    trec = StgTSO_trec(CurrentTSO);
+    (result) = ccall stmReadTAborts(MyCapability() "ptr", trec "ptr");
+    return (result);
+}
+
+stg_readTNestedAbortszh ()
+{
+    P_ trec;
+    W_ result;
+
+    trec = StgTSO_trec(CurrentTSO);
+    (result) = ccall stmReadTNestedAborts(MyCapability() "ptr", trec "ptr");
+    return (result);
+}
+
+stg_readTRetryszh ()
+{
+    P_ trec;
+    W_ result;
+
+    trec = StgTSO_trec(CurrentTSO);
+    (result) = ccall stmReadTRetrys(MyCapability() "ptr", trec "ptr");
+    return (result);
+}
+
+stg_readTNestedRetryszh ()
+{
+    P_ trec;
+    W_ result;
+
+    trec = StgTSO_trec(CurrentTSO);
+    (result) = ccall stmReadTNestedRetrys(MyCapability() "ptr", trec "ptr");
+    return (result);
+}
 
 stg_readTVarzh (P_ tvar)
 {

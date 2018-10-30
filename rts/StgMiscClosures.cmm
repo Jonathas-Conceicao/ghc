@@ -488,8 +488,11 @@ INFO_TABLE(stg_TVAR_WATCH_QUEUE, 3, 0, MUT_PRIM, "TVAR_WATCH_QUEUE", "TVAR_WATCH
 INFO_TABLE(stg_TREC_CHUNK, 0, 0, TREC_CHUNK, "TREC_CHUNK", "TREC_CHUNK")
 { foreign "C" barf("TREC_CHUNK object entered!") never returns; }
 
-INFO_TABLE(stg_TREC_HEADER, 2, 1, MUT_PRIM, "TREC_HEADER", "TREC_HEADER")
+INFO_TABLE(stg_TREC_HEADER, 3, 1, MUT_PRIM, "TREC_HEADER", "TREC_HEADER")
 { foreign "C" barf("TREC_HEADER object entered!") never returns; }
+
+INFO_TABLE(stg_TREC_STATS, 0, 4, MUT_PRIM, "TREC_STATS", "TREC_STATS")
+{ foreign "C" barf("TREC_STATS object entered!") never returns; }
 
 INFO_TABLE_CONSTR(stg_END_STM_WATCH_QUEUE,0,0,0,CONSTR_NOCAF,"END_STM_WATCH_QUEUE","END_STM_WATCH_QUEUE")
 { foreign "C" barf("END_STM_WATCH_QUEUE object entered!") never returns; }

@@ -374,6 +374,17 @@ static void unpark_waiters_on(Capability *cap, StgTVar *s) {
 
 // Helper functions for downstream allocation and initialization
 
+static StgTrecStats *new_stg_trec_stats(Capability *cap) {
+    StgTrecStats *result;
+    result = (StgTrecStats *)allocate(cap, sizeofW(StgTrecStats));
+    SET_HDR (result, &stg_TREC_STATS_info, CCS_SYSTEM);
+    result -> num_aborts = 0;
+    result -> num_nested_aborts = 0;
+    result -> num_retrys = 0;
+    result -> num_nested_retrys = 0;
+    return result;
+}
+
 static StgTVarWatchQueue *new_stg_tvar_watch_queue(Capability *cap,
                                                    StgClosure *closure) {
   StgTVarWatchQueue *result;
@@ -393,13 +404,19 @@ static StgTRecChunk *new_stg_trec_chunk(Capability *cap) {
 }
 
 static StgTRecHeader *new_stg_trec_header(Capability *cap,
-                                          StgTRecHeader *enclosing_trec) {
+                                          StgTRecHeader *enclosing_trec,
+                                          StgTrecStats *stats) {
   StgTRecHeader *result;
   result = (StgTRecHeader *) allocate(cap, sizeofW(StgTRecHeader));
   SET_HDR (result, &stg_TREC_HEADER_info, CCS_SYSTEM);
 
   result -> enclosing_trec = enclosing_trec;
   result -> current_chunk = new_stg_trec_chunk(cap);
+  if (stats == NULL) {
+    result -> stats = new_stg_trec_stats(cap);
+  } else {
+    result -> stats = stats;
+  }
 
   if (enclosing_trec == NO_TREC) {
     result -> state = TREC_ACTIVE;
@@ -460,10 +477,11 @@ static void free_stg_trec_chunk(Capability *cap,
 }
 
 static StgTRecHeader *alloc_stg_trec_header(Capability *cap,
-                                            StgTRecHeader *enclosing_trec) {
+                                            StgTRecHeader *enclosing_trec,
+                                            StgTrecStats *stats) {
   StgTRecHeader *result = NULL;
   if (cap -> free_trec_headers == NO_TREC) {
-    result = new_stg_trec_header(cap, enclosing_trec);
+    result = new_stg_trec_header(cap, enclosing_trec, stats);
   } else {
     result = cap -> free_trec_headers;
     cap -> free_trec_headers = result -> enclosing_trec;
@@ -475,6 +493,14 @@ static StgTRecHeader *alloc_stg_trec_header(Capability *cap,
       ASSERT(enclosing_trec -> state == TREC_ACTIVE ||
              enclosing_trec -> state == TREC_CONDEMNED);
       result -> state = enclosing_trec -> state;
+    }
+    if (stats == NULL) {
+      result -> stats -> num_aborts = 0;
+      result -> stats -> num_nested_aborts = 0;
+      result -> stats -> num_retrys = 0;
+      result -> stats -> num_nested_retrys = 0;
+    } else {
+      result -> stats = stats;
     }
   }
   return result;
@@ -897,7 +923,8 @@ static void getToken(Capability *cap STG_UNUSED) {
 /*......................................................................*/
 
 StgTRecHeader *stmStartTransaction(Capability *cap,
-                                   StgTRecHeader *outer) {
+                                   StgTRecHeader *outer,
+                                   StgTrecStats *stats) {
   StgTRecHeader *t;
   TRACE("%p : stmStartTransaction with %d tokens",
         outer,
@@ -905,7 +932,7 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
 
   getToken(cap);
 
-  t = alloc_stg_trec_header(cap, outer);
+  t = alloc_stg_trec_header(cap, outer, stats);
   TRACE("%p : stmStartTransaction()=%p", outer, t);
   return t;
 }
@@ -1342,6 +1369,28 @@ void stmWriteTVar(Capability *cap,
   }
 
   TRACE("%p : stmWriteTVar done", trec);
+}
+
+/*......................................................................*/
+
+StgWord stmReadTAborts(Capability *cap STG_UNUSED,
+                       StgTRecHeader *trec) {
+    return trec -> stats -> num_aborts;
+}
+
+StgWord stmReadTNestedAborts(Capability *cap STG_UNUSED,
+                             StgTRecHeader *trec) {
+    return trec -> stats -> num_nested_aborts;
+}
+
+StgWord stmReadTRetrys(Capability *cap STG_UNUSED,
+                       StgTRecHeader *trec) {
+    return trec -> stats -> num_retrys;
+}
+
+StgWord stmReadTNestedRetrys(Capability *cap STG_UNUSED,
+                             StgTRecHeader *trec) {
+    return trec -> stats -> num_nested_retrys;
 }
 
 /*......................................................................*/

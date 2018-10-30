@@ -491,7 +491,13 @@ wanteds os = concat
           ,closureField C "StgAtomicallyFrame" "code"
           ,closureField C "StgAtomicallyFrame" "result"
 
+          ,closureField C "StgTrecStats" "num_aborts"
+          ,closureField C "StgTrecStats" "num_nested_aborts"
+          ,closureField C "StgTrecStats" "num_retrys"
+          ,closureField C "StgTrecStats" "num_nested_retrys"
+
           ,closureField C "StgTRecHeader" "enclosing_trec"
+          ,closureField C "StgTRecHeader" "stats"
 
           ,closureSize  C "StgCatchSTMFrame"
           ,closureField C "StgCatchSTMFrame" "handler"

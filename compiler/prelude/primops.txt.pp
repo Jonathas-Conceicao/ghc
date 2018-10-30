@@ -2448,6 +2448,29 @@ primop  WriteTVarOp "writeTVar#" GenPrimOp
 primop  SameTVarOp "sameTVar#" GenPrimOp
    TVar# s a -> TVar# s a -> Int#
 
+primop  ReadTAbortsOp "readTAborts#" GenPrimOp
+   State# RealWorld -> (# State# RealWorld, Int# #)
+   with
+   out_of_line = True
+   has_side_effects = True
+
+primop  ReadTNestedAbortsOp "readTNestedAborts#" GenPrimOp
+   State# RealWorld -> (# State# RealWorld, Int# #)
+   with
+   out_of_line = True
+   has_side_effects = True
+
+primop  ReadTRetrysOp "readTRetrys#" GenPrimOp
+   State# RealWorld -> (# State# RealWorld, Int# #)
+   with
+   out_of_line = True
+   has_side_effects = True
+
+primop  ReadTNestedRetrysOp "readTNestedRetrys#" GenPrimOp
+   State# RealWorld -> (# State# RealWorld, Int# #)
+   with
+   out_of_line = True
+   has_side_effects = True
 
 ------------------------------------------------------------------------
 section "Synchronized Mutable Variables"
