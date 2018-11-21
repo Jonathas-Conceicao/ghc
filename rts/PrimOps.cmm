@@ -1001,7 +1001,6 @@ INFO_TABLE_RET(stg_catch_retry_handle_abort_frame, CATCH_RETRY_FRAME,
                                         alt_code))
     return (P_ ret)
 {
-    W_ r;
     gcptr trec, outer;
     gcptr handler;
 
@@ -1298,6 +1297,138 @@ INFO_TABLE_RET(stg_catch_stm_frame, CATCH_STM_FRAME,
     }
 }
 
+INFO_TABLE_RET(stg_retry_handle_nested, CATCH_RETRY_FRAME,
+               CATCH_RETRY_FRAME_FIELDS(W_,P_,
+                                        info_ptr, p1, p2,
+                                        running_alt_code,
+                                        first_code,
+                                        alt_code))
+    return (P_ result) // value returned to the frame
+{
+    gcptr trec, outer;
+    gcptr handler;
+
+    trec = StgTSO_trec(CurrentTSO);
+    outer  = StgTRecHeader_enclosing_trec(trec);
+
+    /* Checks for abort handlers */
+    ("ptr" handler) = ccall stmGetNextAbortHandler(MyCapability() "ptr", trec "ptr");
+    if (handler != END_STM_HANDLER_QUEUE) {
+        /* Run current handler */
+        jump stg_ap_v_fast
+            (CATCH_RETRY_FRAME_FIELDS(,,info_ptr, p1, p2,
+                                      running_alt_code,
+                                      first_code,
+                                      alt_code))
+            (StgSTMHandler_code(handler));
+    }
+
+    /* No more handlers, go back to retry */
+    jump stg_retryzh
+        (CATCH_RETRY_FRAME_FIELDS(,,stg_catch_retry_frame_info, p1, p2,
+                                  running_alt_code,
+                                  first_code,
+                                  alt_code))
+        ();
+}
+
+INFO_TABLE_RET(stg_abort_handle_nested, CATCH_RETRY_FRAME,
+               CATCH_RETRY_FRAME_FIELDS(W_,P_,
+                                        info_ptr, p1, p2,
+                                        running_alt_code,
+                                        first_code,
+                                        alt_code))
+    return (P_ result) // value returned to the frame
+{
+    gcptr trec, outer;
+    gcptr handler;
+
+    trec = StgTSO_trec(CurrentTSO);
+    outer  = StgTRecHeader_enclosing_trec(trec);
+
+    /* Checks for abort handlers */
+    ("ptr" handler) = ccall stmGetNextAbortHandler(MyCapability() "ptr", trec "ptr");
+    if (handler != END_STM_HANDLER_QUEUE) {
+        /* Run current handler */
+        jump stg_ap_v_fast
+            (CATCH_RETRY_FRAME_FIELDS(,,info_ptr, p1, p2,
+                                      running_alt_code,
+                                      first_code,
+                                      alt_code))
+            (StgSTMHandler_code(handler));
+    }
+
+    /* No more handlers, go back to abort */
+    jump stg_abortzh
+        (CATCH_RETRY_FRAME_FIELDS(,,stg_catch_retry_frame_info, p1, p2,
+                                  running_alt_code,
+                                  first_code,
+                                  alt_code))
+        ();
+}
+
+INFO_TABLE_RET(stg_retry_handle_transaction, ATOMICALLY_FRAME,
+               // layout of the frame, and bind the field names
+               ATOMICALLY_FRAME_FIELDS(W_,P_,
+                                       info_ptr, p1, p2,
+                                       code,
+                                       frame_result))
+    return (P_ result) // value returned to the frame
+{
+    gcptr trec, outer;
+    gcptr handler;
+
+    trec = StgTSO_trec(CurrentTSO);
+    outer  = StgTRecHeader_enclosing_trec(trec);
+
+    /* Checks for abort handlers */
+    ("ptr" handler) = ccall stmGetNextAbortHandler(MyCapability() "ptr", trec "ptr");
+    if (handler != END_STM_HANDLER_QUEUE) {
+        /* Run current handler */
+        jump stg_ap_v_fast
+            (ATOMICALLY_FRAME_FIELDS(,,info_ptr, p1, p2,
+                                     code,frame_result))
+            (StgSTMHandler_code(handler));
+    }
+
+    /* No more handlers, go back to retry */
+    jump stg_retryzh
+        (ATOMICALLY_FRAME_FIELDS(,,stg_atomically_frame_info, p1, p2,
+                                 code,frame_result))
+        ();
+}
+
+INFO_TABLE_RET(stg_abort_handle_transaction, ATOMICALLY_FRAME,
+               // layout of the frame, and bind the field names
+               ATOMICALLY_FRAME_FIELDS(W_,P_,
+                                       info_ptr, p1, p2,
+                                       code,
+                                       frame_result))
+    return (P_ result) // value returned to the frame
+{
+    gcptr trec, outer;
+    gcptr handler;
+
+    trec = StgTSO_trec(CurrentTSO);
+    outer  = StgTRecHeader_enclosing_trec(trec);
+
+    /* Checks for abort handlers */
+    ("ptr" handler) = ccall stmGetNextAbortHandler(MyCapability() "ptr", trec "ptr");
+    if (handler != END_STM_HANDLER_QUEUE) {
+        /* Run current handler */
+        jump stg_ap_v_fast
+            (ATOMICALLY_FRAME_FIELDS(,,info_ptr, p1, p2,
+                                     code,frame_result))
+            (StgSTMHandler_code(handler));
+    }
+
+    /* No more handlers, go back to abort */
+    jump stg_abortzh
+        (ATOMICALLY_FRAME_FIELDS(,,stg_atomically_frame_info, p1, p2,
+                                 code,frame_result))
+        ();
+}
+
 
 // Primop definition -----------------------------------------------------------
 
@@ -1393,6 +1524,7 @@ stg_retryzh /* no arg list: explicit stack layout */
     W_ frame;
     W_ trec;
     W_ outer;
+    W_ handler;
     W_ r;
 
     // STM operations may allocate
@@ -1411,6 +1543,15 @@ retry_pop_stack:
     if (frame_type == CATCH_RETRY_FRAME) {
         // The retry reaches a CATCH_RETRY_FRAME before the atomic frame
         ASSERT(outer != NO_TREC);
+        // Check for abort handlers
+        ("ptr" handler) = ccall stmGetNextAbortHandler(MyCapability() "ptr", trec "ptr");
+        if (handler != END_STM_HANDLER_QUEUE) {
+        // Can't continue the retry just yet, got a abort handler to run
+            StgHeader_info(frame) = stg_retry_handle_nested_info;
+            Sp = frame;
+            R1 = StgSTMHandler_code(handler);
+            jump stg_ap_v_fast[R1];
+        }
         // Abort the transaction attempting the current branch
         ccall stmAbortTransaction(MyCapability() "ptr", trec "ptr");
         ccall stmFreeAbortedTRec(MyCapability() "ptr", trec "ptr");
@@ -1432,6 +1573,16 @@ retry_pop_stack:
     // We've reached the ATOMICALLY_FRAME: attempt to wait
     ASSERT(frame_type == ATOMICALLY_FRAME);
     ASSERT(outer == NO_TREC);
+
+    // Check for abort handlers
+    ("ptr" handler) = ccall stmGetNextAbortHandler(MyCapability() "ptr", trec "ptr");
+    if (handler != END_STM_HANDLER_QUEUE) {
+        // Can't continue the retry just yet, got a abort handler to run
+        StgHeader_info(frame) = stg_retry_handle_transaction_info;
+        Sp = frame;
+        R1 = StgSTMHandler_code(handler);
+        jump stg_ap_v_fast[R1];
+    }
 
     (r) = ccall stmWait(MyCapability() "ptr", CurrentTSO "ptr", trec "ptr");
     if (r != 0) {
@@ -1456,6 +1607,7 @@ stg_abortzh /* no arg list: explicit stack layout */
     W_ frame;
     W_ trec;
     W_ outer;
+    W_ handler;
     W_ r;
 
     // STM operations may allocate
@@ -1474,6 +1626,15 @@ abort_pop_stack:
     if (frame_type == CATCH_RETRY_FRAME) {
         // The abort reaches a CATCH_RETRY_FRAME before the atomic frame
         ASSERT(outer != NO_TREC);
+        // Check for abort handlers
+        ("ptr" handler) = ccall stmGetNextAbortHandler(MyCapability() "ptr", trec "ptr");
+        if (handler != END_STM_HANDLER_QUEUE) {
+            // Can't continue the retry just yet, got a abort handler to run
+            StgHeader_info(frame) = stg_abort_handle_nested_info;
+            Sp = frame;
+            R1 = StgSTMHandler_code(handler);
+            jump stg_ap_v_fast[R1];
+        }
         // Abort the transaction
         ccall stmAbortTransaction(MyCapability() "ptr", trec "ptr");
         ccall stmFreeAbortedTRec(MyCapability() "ptr", trec "ptr");
@@ -1485,6 +1646,16 @@ abort_pop_stack:
     // We've reached the ATOMICALLY_FRAME: retry the block
     ASSERT(frame_type == ATOMICALLY_FRAME);
     ASSERT(outer == NO_TREC);
+
+    // Check for abort handlers
+    ("ptr" handler) = ccall stmGetNextAbortHandler(MyCapability() "ptr", trec "ptr");
+    if (handler != END_STM_HANDLER_QUEUE) {
+        // Can't continue the retry just yet, got a abort handler to run
+        StgHeader_info(frame) = stg_abort_handle_transaction_info;
+        Sp = frame;
+        R1 = StgSTMHandler_code(handler);
+        jump stg_ap_v_fast[R1];
+    }
 
     // Transaction was not valid: retry immediately
     ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr", outer "ptr");
