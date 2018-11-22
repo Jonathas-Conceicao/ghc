@@ -1643,7 +1643,7 @@ abort_pop_stack:
         goto abort_pop_stack;
     }
 
-    // We've reached the ATOMICALLY_FRAME: retry the block
+    // We've reached the ATOMICALLY_FRAME
     ASSERT(frame_type == ATOMICALLY_FRAME);
     ASSERT(outer == NO_TREC);
 
@@ -1657,7 +1657,7 @@ abort_pop_stack:
         jump stg_ap_v_fast[R1];
     }
 
-    // Transaction was not valid: retry immediately
+    // Restart transaction
     ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr", outer "ptr");
     StgTSO_trec(CurrentTSO) = trec;
     Sp = frame;

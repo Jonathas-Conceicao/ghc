@@ -947,6 +947,10 @@ void stmAbortTransaction(Capability *cap,
       StgTVar *s = e -> tvar;
       merge_read_into(cap, et, s, e -> expected_value);
     });
+
+    // Unlink Commit handlers and pass abort handlers to enclosing trec
+    trec -> next_commit_handler = END_STM_HANDLER_QUEUE;
+    stmPassHandlers(trec, et);
   }
 
   trec -> state = TREC_ABORTED;
