@@ -769,6 +769,7 @@ static StgBool validate_and_acquire_ownership (Capability *cap,
 
   ASSERT((trec -> state == TREC_ACTIVE) ||
          (trec -> state == TREC_WAITING) ||
+         (trec -> state == TREC_COMMITTED) ||
          (trec -> state == TREC_CONDEMNED));
   result = !((trec -> state) == TREC_CONDEMNED);
   if (result) {
@@ -1004,19 +1005,23 @@ StgBool stmValidateNestOfTransactions(Capability *cap, StgTRecHeader *trec) {
   ASSERT(trec != NO_TREC);
   ASSERT((trec -> state == TREC_ACTIVE) ||
          (trec -> state == TREC_WAITING) ||
+         (trec -> state = TREC_COMMITTED) ||
          (trec -> state == TREC_CONDEMNED));
 
   lock_stm(trec);
 
   t = trec;
   StgBool result = true;
-  while (t != NO_TREC) {
-    result &= validate_and_acquire_ownership(cap, t, true, false);
-    t = t -> enclosing_trec;
-  }
+  
+  if (trec -> state != TREC_COMMITTED) {
+    while (t != NO_TREC) {
+      result &= validate_and_acquire_ownership(cap, t, true, false);
+      t = t -> enclosing_trec;
+    }
 
-  if (!result && trec -> state != TREC_WAITING) {
-    trec -> state = TREC_CONDEMNED;
+    if (!result && trec -> state != TREC_WAITING) {
+      trec -> state = TREC_CONDEMNED;
+    }
   }
 
   unlock_stm(trec);
@@ -1246,9 +1251,13 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
         }
         ACQ_ASSERT(!tvar_is_locked(s, trec));
       });
+      trec -> state = TREC_COMMITTED;
     } else {
         revert_ownership(cap, trec, false);
+        trec -> state = TREC_CONDEMNED;
     }
+  } else {
+    trec -> state = TREC_CONDEMNED;
   }
 
   unlock_stm(trec);
@@ -1299,6 +1308,7 @@ StgBool stmCommitNestedTransaction(Capability *cap, StgTRecHeader *trec) {
       });
 
       stmPassHandlers(trec, et);
+      trec -> state = TREC_COMMITTED;
     } else {
         revert_ownership(cap, trec, false);
     }
