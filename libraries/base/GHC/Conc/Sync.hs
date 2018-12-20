@@ -71,6 +71,8 @@ module GHC.Conc.Sync
         , STM(..)
         , atomically
         , newTBSTM
+        , performIO
+        , unsafeSTMToIO
         , addCommitHandler
         , addAbortHandler
         , abort
@@ -734,9 +736,9 @@ atomically :: STM a -> IO a
 atomically (STM m) = IO (\s -> (atomically# m) s )
 
 newTBSTM :: IO(Maybe a) -> (a -> IO ()) -> IO () -> STM a
-newTBSTM iomac undo commit = do
-  mac <- unsafeIOToSTM iomac
-  case mac of
+newTBSTM iomac undo commit = performIO $ do
+  mac <- iomac
+  unsafeSTMToIO $ case mac of
     Just ac -> addHandlers ac
     Nothing -> abort
   where
@@ -745,11 +747,17 @@ newTBSTM iomac undo commit = do
       addAbortHandler $ undo ac
       return ac
 
+unsafeSTMToIO :: STM a -> IO a
+unsafeSTMToIO (STM m) = IO m
+
+performIO :: IO a -> STM a
+performIO ac = STM $ \s# -> performIO# (unIO ac) s#
+
 addCommitHandler :: IO () -> STM ()
 addCommitHandler commit = STM $ \s -> case (addCommitHandler# (unIO commit)) s of s' -> (# s', () #)
 
 addAbortHandler :: IO () -> STM ()
-addAbortHandler abort = STM $ \s -> case (addAbortHandler# (unIO abort)) s of s' -> (# s', () #)
+addAbortHandler undo = STM $ \s -> case (addAbortHandler# (unIO undo)) s of s' -> (# s', () #)
 
 abort :: STM a
 abort = STM $ \s# -> abort# s#

@@ -2435,6 +2435,16 @@ primop  AddCommitHandlerOp "addCommitHandler#" GenPrimOp
    out_of_line = True
    has_side_effects = True
 
+primop  PerformIOOp "performIO#" GenPrimOp
+      (State# RealWorld -> (# State# RealWorld, a #) )
+   -> (State# RealWorld -> (# State# RealWorld, a #) )
+   with
+   strictness  = { \ _arity -> mkClosedStrictSig [ lazyApply1Dmd
+                                                 , topDmd ] topRes }
+                 -- See Note [Strictness for mask/unmask/catch]
+   out_of_line = True
+   has_side_effects = True
+
 primop  NewTVarOp "newTVar#" GenPrimOp
        a
     -> State# s -> (# State# s, TVar# s a #)

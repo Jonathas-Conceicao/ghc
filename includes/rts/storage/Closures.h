@@ -346,6 +346,7 @@ typedef enum {
   TREC_COMMITTED,     /* Transaction has committed, now updating tvars */
   TREC_ABORTED,       /* Transaction has aborted, now reverting tvars */
   TREC_WAITING,       /* Transaction currently waiting */
+  TREC_RUNNINGIO,     /* Transaction currently running IO action, should not preemptively abort */
 } TRecState;
 
 typedef struct StgSTMHandler_ {

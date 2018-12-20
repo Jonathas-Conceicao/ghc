@@ -1005,15 +1005,16 @@ StgBool stmValidateNestOfTransactions(Capability *cap, StgTRecHeader *trec) {
   ASSERT(trec != NO_TREC);
   ASSERT((trec -> state == TREC_ACTIVE) ||
          (trec -> state == TREC_WAITING) ||
-         (trec -> state = TREC_COMMITTED) ||
-         (trec -> state == TREC_CONDEMNED));
+         (trec -> state == TREC_COMMITTED) ||
+         (trec -> state == TREC_CONDEMNED) ||
+         (trec -> state == TREC_RUNNINGIO));
 
   lock_stm(trec);
 
   t = trec;
   StgBool result = true;
-  
-  if (trec -> state != TREC_COMMITTED) {
+
+  if (trec -> state != TREC_COMMITTED && trec -> state != TREC_RUNNINGIO) {
     while (t != NO_TREC) {
       result &= validate_and_acquire_ownership(cap, t, true, false);
       t = t -> enclosing_trec;
@@ -1056,14 +1057,39 @@ static TRecEntry *get_entry_for(StgTRecHeader *trec, StgTVar *tvar, StgTRecHeade
 
 /*......................................................................*/
 
+void stmSetRunningIO(StgTRecHeader *trec) {
+  TRACE("%p : stmSetRunningIO", trec);
+  ASSERT(trec != NO_TREC);
+  ASSERT(trec -> state == TREC_ACTIVE);
+
+  lock_stm(trec);
+  trec -> state = TREC_RUNNINGIO;
+  unlock_stm(trec);
+
+  TRACE("%p : stmSetRunningIO done", trec);
+}
+
+void stmUnsetRunningIO(StgTRecHeader *trec) {
+  TRACE("%p : stmUnsetRunningIO", trec);
+  ASSERT(trec != NO_TREC);
+  ASSERT(trec -> state == TREC_RUNNINGIO);
+
+  lock_stm(trec);
+  trec -> state = TREC_ACTIVE;
+  unlock_stm(trec);
+
+  TRACE("%p : stmUnsetRunningIO done", trec);
+}
+
 void stmAddAbortHandler(Capability *cap,
                         StgTRecHeader *trec,
                         StgClosure *code) {
   StgSTMHandler *handler;
   TRACE("%p : stmAddAbortHandler handler=%p", trec, code);
   ASSERT(trec != NO_TREC);
-  ASSERT(trec -> state == TREC_ACTIVE ||
-         trec -> state == TREC_CONDEMNED);
+  ASSERT((trec -> state == TREC_ACTIVE) ||
+         (trec -> state == TREC_CONDEMNED) ||
+         (trec -> state == TREC_RUNNINGIO));
 
   // 1. Allocate an StgSTMHandler
 
@@ -1087,8 +1113,9 @@ void stmAddCommitHandler(Capability *cap,
   StgSTMHandler *handler;
   TRACE("%p : stmAddCommitHandler handler=%p", trec, code);
   ASSERT(trec != NO_TREC);
-  ASSERT(trec -> state == TREC_ACTIVE ||
-         trec -> state == TREC_CONDEMNED);
+  ASSERT((trec -> state == TREC_ACTIVE) ||
+         (trec -> state == TREC_CONDEMNED) ||
+         (trec -> state == TREC_RUNNINGIO));
 
   // 1. Allocate an StgSTMHandler
 
@@ -1111,8 +1138,10 @@ void stmPassHandlers(StgTRecHeader *trec,
   StgSTMHandler *chandler, *ahandler;
   TRACE("%p : stmPassHandlers passing handlers to %p", trec, to);
   ASSERT(trec != NO_TREC);
-  ASSERT(trec -> state == TREC_ACTIVE ||
-         trec -> state == TREC_CONDEMNED);
+  ASSERT((trec -> state == TREC_ACTIVE) ||
+         (trec -> state == TREC_WAITING) ||
+         (trec -> state = TREC_COMMITTED) ||
+         (trec -> state == TREC_CONDEMNED));
   ASSERT(to != NO_TREC);
 
   chandler = trec -> next_commit_handler;

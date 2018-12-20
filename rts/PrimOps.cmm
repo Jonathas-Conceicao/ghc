@@ -1665,6 +1665,28 @@ abort_pop_stack:
     jump stg_ap_v_fast [R1];
 }
 
+stg_performIOzh (P_ ac /* :: IO a */)
+{
+    P_ trec;
+
+    // stmStartTransaction may allocate
+    MAYBE_GC_P(stg_performIOzh, ac);
+
+    STK_CHK_GEN();
+
+    // Set TRec state as running IO, so it won't abort prematurly
+    trec = StgTSO_trec(CurrentTSO);
+    ccall stmSetRunningIO(trec "ptr");
+
+    // Run the IO action
+    (P_ acret) = call stg_ap_v_fast (ac);
+
+    // Set TRec state back to active to restore usual behavior
+    ccall stmUnsetRunningIO(trec "ptr");
+
+    return (acret);
+}
+
 stg_addAbortHandlerzh (P_ abort  /* :: IO () */)
 {
     P_ trec;
