@@ -1014,7 +1014,7 @@ StgBool stmValidateNestOfTransactions(Capability *cap, StgTRecHeader *trec) {
   t = trec;
   StgBool result = true;
 
-  if (trec -> state != TREC_COMMITTED && trec -> state != TREC_RUNNINGIO) {
+  if (trec -> state != TREC_COMMITTED && trec -> state != TREC_CONDEMNED && trec -> state != TREC_RUNNINGIO) {
     while (t != NO_TREC) {
       result &= validate_and_acquire_ownership(cap, t, true, false);
       t = t -> enclosing_trec;
