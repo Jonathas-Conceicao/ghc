@@ -985,11 +985,13 @@ stg_threadStatuszh ( gcptr tso )
 #define CATCH_RETRY_FRAME_FIELDS(w_,p_,info_ptr,        \
                                  p1, p2,                \
                                  running_alt_code,      \
+                                 enclosing_trec,        \
                                  first_code,            \
                                  alt_code)              \
   w_ info_ptr,                                          \
   PROF_HDR_FIELDS(w_,p1,p2)                             \
   w_ running_alt_code,                                  \
+  p_ enclosing_trec,                                    \
   p_ first_code,                                        \
   p_ alt_code
 
@@ -997,15 +999,15 @@ INFO_TABLE_RET(stg_catch_retry_handle_abort_frame, CATCH_RETRY_FRAME,
                CATCH_RETRY_FRAME_FIELDS(W_,P_,
                                         info_ptr, p1, p2,
                                         running_alt_code,
+                                        enclosing_trec,
                                         first_code,
                                         alt_code))
     return (P_ ret)
 {
-    gcptr trec, outer;
+    gcptr trec;
     gcptr handler;
 
     trec = StgTSO_trec(CurrentTSO);
-    outer  = StgTRecHeader_enclosing_trec(trec);
 
     /* Checks for abort handlers */
     ("ptr" handler) = ccall stmGetNextAbortHandler(MyCapability() "ptr", trec "ptr");
@@ -1014,6 +1016,7 @@ INFO_TABLE_RET(stg_catch_retry_handle_abort_frame, CATCH_RETRY_FRAME,
         jump stg_ap_v_fast
             (CATCH_RETRY_FRAME_FIELDS(,,info_ptr, p1, p2,
                                       running_alt_code,
+                                      enclosing_trec,
                                       first_code,
                                       alt_code))
             (StgSTMHandler_code(handler));
@@ -1021,12 +1024,13 @@ INFO_TABLE_RET(stg_catch_retry_handle_abort_frame, CATCH_RETRY_FRAME,
 
     P_ new_trec;
     ("ptr" new_trec) = ccall stmStartTransaction(MyCapability() "ptr",
-                                                 outer "ptr");
+                                                 enclosing_trec "ptr");
     StgTSO_trec(CurrentTSO) = new_trec;
     if (running_alt_code != 0) {
         jump stg_ap_v_fast
             (CATCH_RETRY_FRAME_FIELDS(,,stg_catch_retry_frame_info, p1, p2,
                                       running_alt_code,
+                                      enclosing_trec,
                                       first_code,
                                       alt_code))
             (alt_code);
@@ -1034,6 +1038,7 @@ INFO_TABLE_RET(stg_catch_retry_handle_abort_frame, CATCH_RETRY_FRAME,
         jump stg_ap_v_fast
             (CATCH_RETRY_FRAME_FIELDS(,,stg_catch_retry_frame_info, p1, p2,
                                       running_alt_code,
+                                      enclosing_trec,
                                       first_code,
                                       alt_code))
             (first_code);
@@ -1044,21 +1049,21 @@ INFO_TABLE_RET(stg_catch_retry_frame, CATCH_RETRY_FRAME,
                CATCH_RETRY_FRAME_FIELDS(W_,P_,
                                         info_ptr, p1, p2,
                                         running_alt_code,
+                                        enclosing_trec,
                                         first_code,
                                         alt_code))
     return (P_ ret)
 {
     unwind Sp = Sp + SIZEOF_StgCatchRetryFrame;
     W_ r;
-    gcptr trec, outer;
+    gcptr trec;
     gcptr handler;
 
     trec = StgTSO_trec(CurrentTSO);
-    outer  = StgTRecHeader_enclosing_trec(trec);
     (r) = ccall stmCommitNestedTransaction(MyCapability() "ptr", trec "ptr");
     if (r != 0) {
         // Succeeded (either first branch or second branch)
-        StgTSO_trec(CurrentTSO) = outer;
+        StgTSO_trec(CurrentTSO) = enclosing_trec;
         return (ret);
     } else {
         // Did not commit: re-execute
@@ -1070,6 +1075,7 @@ INFO_TABLE_RET(stg_catch_retry_frame, CATCH_RETRY_FRAME,
             jump stg_ap_v_fast
                 (CATCH_RETRY_FRAME_FIELDS(,,stg_catch_retry_handle_abort_frame_info, p1, p2,
                                           running_alt_code,
+                                          enclosing_trec,
                                           first_code,
                                           alt_code))
                 (StgSTMHandler_code(handler));
@@ -1077,12 +1083,13 @@ INFO_TABLE_RET(stg_catch_retry_frame, CATCH_RETRY_FRAME,
 
         P_ new_trec;
         ("ptr" new_trec) = ccall stmStartTransaction(MyCapability() "ptr",
-                                                           outer "ptr");
+                                                     enclosing_trec "ptr");
         StgTSO_trec(CurrentTSO) = new_trec;
         if (running_alt_code != 0) {
             jump stg_ap_v_fast
                 (CATCH_RETRY_FRAME_FIELDS(,,info_ptr, p1, p2,
                                           running_alt_code,
+                                          enclosing_trec,
                                           first_code,
                                           alt_code))
                 (alt_code);
@@ -1090,6 +1097,7 @@ INFO_TABLE_RET(stg_catch_retry_frame, CATCH_RETRY_FRAME,
             jump stg_ap_v_fast
                 (CATCH_RETRY_FRAME_FIELDS(,,info_ptr, p1, p2,
                                           running_alt_code,
+                                          enclosing_trec,
                                           first_code,
                                           alt_code))
                 (first_code);
@@ -1301,15 +1309,15 @@ INFO_TABLE_RET(stg_retry_handle_nested, CATCH_RETRY_FRAME,
                CATCH_RETRY_FRAME_FIELDS(W_,P_,
                                         info_ptr, p1, p2,
                                         running_alt_code,
+                                        enclosing_trec,
                                         first_code,
                                         alt_code))
     return (P_ result) // value returned to the frame
 {
-    gcptr trec, outer;
+    gcptr trec;
     gcptr handler;
 
     trec = StgTSO_trec(CurrentTSO);
-    outer  = StgTRecHeader_enclosing_trec(trec);
 
     /* Checks for abort handlers */
     ("ptr" handler) = ccall stmGetNextAbortHandler(MyCapability() "ptr", trec "ptr");
@@ -1318,6 +1326,7 @@ INFO_TABLE_RET(stg_retry_handle_nested, CATCH_RETRY_FRAME,
         jump stg_ap_v_fast
             (CATCH_RETRY_FRAME_FIELDS(,,info_ptr, p1, p2,
                                       running_alt_code,
+                                      enclosing_trec,
                                       first_code,
                                       alt_code))
             (StgSTMHandler_code(handler));
@@ -1327,6 +1336,7 @@ INFO_TABLE_RET(stg_retry_handle_nested, CATCH_RETRY_FRAME,
     jump stg_retryzh
         (CATCH_RETRY_FRAME_FIELDS(,,stg_catch_retry_frame_info, p1, p2,
                                   running_alt_code,
+                                  enclosing_trec,
                                   first_code,
                                   alt_code))
         ();
@@ -1336,15 +1346,15 @@ INFO_TABLE_RET(stg_abort_handle_nested, CATCH_RETRY_FRAME,
                CATCH_RETRY_FRAME_FIELDS(W_,P_,
                                         info_ptr, p1, p2,
                                         running_alt_code,
+                                        enclosing_trec,
                                         first_code,
                                         alt_code))
     return (P_ result) // value returned to the frame
 {
-    gcptr trec, outer;
+    gcptr trec;
     gcptr handler;
 
     trec = StgTSO_trec(CurrentTSO);
-    outer  = StgTRecHeader_enclosing_trec(trec);
 
     /* Checks for abort handlers */
     ("ptr" handler) = ccall stmGetNextAbortHandler(MyCapability() "ptr", trec "ptr");
@@ -1353,6 +1363,7 @@ INFO_TABLE_RET(stg_abort_handle_nested, CATCH_RETRY_FRAME,
         jump stg_ap_v_fast
             (CATCH_RETRY_FRAME_FIELDS(,,info_ptr, p1, p2,
                                       running_alt_code,
+                                      enclosing_trec,
                                       first_code,
                                       alt_code))
             (StgSTMHandler_code(handler));
@@ -1362,6 +1373,7 @@ INFO_TABLE_RET(stg_abort_handle_nested, CATCH_RETRY_FRAME,
     jump stg_abortzh
         (CATCH_RETRY_FRAME_FIELDS(,,stg_catch_retry_frame_info, p1, p2,
                                   running_alt_code,
+                                  enclosing_trec,
                                   first_code,
                                   alt_code))
         ();
@@ -1498,6 +1510,7 @@ stg_catchRetryzh (P_ first_code, /* :: STM a */
                   P_ alt_code    /* :: STM a */)
 {
     W_ new_trec;
+    P_ enclosing_trec;
 
     // stmStartTransaction may allocate
     MAYBE_GC_PP (stg_catchRetryzh, first_code, alt_code);
@@ -1505,14 +1518,16 @@ stg_catchRetryzh (P_ first_code, /* :: STM a */
     STK_CHK_GEN();
 
     /* Start a nested transaction within which to run the first code */
+    enclosing_trec = StgTSO_trec(CurrentTSO);
     ("ptr" new_trec) = ccall stmStartTransaction(MyCapability() "ptr",
-                                                 StgTSO_trec(CurrentTSO) "ptr");
+                                                 enclosing_trec "ptr");
     StgTSO_trec(CurrentTSO) = new_trec;
 
     // push the CATCH_RETRY stack frame, and apply first_code to realWorld#
     jump stg_ap_v_fast
         (CATCH_RETRY_FRAME_FIELDS(,, stg_catch_retry_frame_info, CCCS, 0,
                                   0, /* not running_alt_code */
+                                  enclosing_trec,
                                   first_code,
                                   alt_code))
         (first_code);

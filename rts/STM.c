@@ -161,7 +161,7 @@ static int shake(void) {
 // if REUSE_MEMORY is defined then attempt to re-use descriptors, log chunks,
 // and wait queue entries without GC
 
-/* #define REUSE_MEMORY */
+#define REUSE_MEMORY
 
 /*......................................................................*/
 
@@ -1139,9 +1139,7 @@ void stmPassHandlers(StgTRecHeader *trec,
   TRACE("%p : stmPassHandlers passing handlers to %p", trec, to);
   ASSERT(trec != NO_TREC);
   ASSERT((trec -> state == TREC_ACTIVE) ||
-         (trec -> state == TREC_WAITING) ||
-         (trec -> state = TREC_COMMITTED) ||
-         (trec -> state == TREC_CONDEMNED));
+         (trec -> state == TREC_WAITING));
   ASSERT(to != NO_TREC);
 
   chandler = trec -> next_commit_handler;
@@ -1339,8 +1337,11 @@ StgBool stmCommitNestedTransaction(Capability *cap, StgTRecHeader *trec) {
       stmPassHandlers(trec, et);
       trec -> state = TREC_COMMITTED;
     } else {
-        revert_ownership(cap, trec, false);
+      revert_ownership(cap, trec, false);
+      trec -> state = TREC_CONDEMNED;
     }
+  } else {
+    trec -> state = TREC_CONDEMNED;
   }
 
   unlock_stm(trec);

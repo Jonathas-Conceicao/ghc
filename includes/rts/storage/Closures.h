@@ -379,6 +379,7 @@ typedef struct {
 typedef struct {
   StgHeader      header;
   StgWord        running_alt_code;
+  StgClosure    *enclosing_trec;
   StgClosure    *first_code;
   StgClosure    *alt_code;
 } StgCatchRetryFrame;

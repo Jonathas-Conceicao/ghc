@@ -504,6 +504,7 @@ wanteds os = concat
 
           ,closureSize  C "StgCatchRetryFrame"
           ,closureField C "StgCatchRetryFrame" "running_alt_code"
+          ,closureField C "StgCatchRetryFrame" "enclosing_trec"
           ,closureField C "StgCatchRetryFrame" "first_code"
           ,closureField C "StgCatchRetryFrame" "alt_code"
 
