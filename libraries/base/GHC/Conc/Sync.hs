@@ -70,12 +70,6 @@ module GHC.Conc.Sync
         -- * TVars
         , STM(..)
         , atomically
-        , newTBSTM
-        , performIO
-        , unsafeSTMToIO
-        , addCommitHandler
-        , addAbortHandler
-        , abort
         , retry
         , orElse
         , throwSTM
@@ -87,6 +81,14 @@ module GHC.Conc.Sync
         , readTVarIO
         , writeTVar
         , unsafeIOToSTM
+
+        , IOSTM(..)
+        , performIO
+        , runIO
+        , addCommitHandler
+        , addAbortHandler
+        , abort
+        , newTBSTM
 
         -- * Miscellaneous
         , withMVar
@@ -735,33 +737,6 @@ unsafeIOToSTM (IO m) = STM m
 atomically :: STM a -> IO a
 atomically (STM m) = IO (\s -> (atomically# m) s )
 
-newTBSTM :: IO(Maybe a) -> (a -> IO ()) -> IO () -> STM a
-newTBSTM iomac undo commit = performIO $ do
-  mac <- iomac
-  unsafeSTMToIO $ case mac of
-    Just ac -> addHandlers ac
-    Nothing -> abort
-  where
-    addHandlers ac = do
-      addCommitHandler commit
-      addAbortHandler $ undo ac
-      return ac
-
-unsafeSTMToIO :: STM a -> IO a
-unsafeSTMToIO (STM m) = IO m
-
-performIO :: IO a -> STM a
-performIO ac = STM $ \s# -> performIO# (unIO ac) s#
-
-addCommitHandler :: IO () -> STM ()
-addCommitHandler commit = STM $ \s -> case (addCommitHandler# (unIO commit)) s of s' -> (# s', () #)
-
-addAbortHandler :: IO () -> STM ()
-addAbortHandler undo = STM $ \s -> case (addAbortHandler# (unIO undo)) s of s' -> (# s', () #)
-
-abort :: STM a
-abort = STM $ \s# -> abort# s#
-
 -- | Retry execution of the current memory transaction because it has seen
 -- values in 'TVar's which mean that it should not continue (e.g. the 'TVar's
 -- represent a shared buffer that is now empty).  The implementation may
@@ -849,6 +824,71 @@ writeTVar :: TVar a -> a -> STM ()
 writeTVar (TVar tvar#) val = STM $ \s1# ->
     case writeTVar# tvar# val s1# of
          s2# -> (# s2#, () #)
+
+-- | A monad form performing IO actions inside STM Monad
+newtype IOSTM a = IOSTM (State# RealWorld -> (# State# RealWorld, a #))
+
+unIOSTM :: IOSTM a -> (State# RealWorld -> (# State# RealWorld, a #))
+unIOSTM (IOSTM a) = a
+
+instance  Functor IOSTM where
+   fmap f x = x >>= (pure . f)
+
+instance Applicative IOSTM where
+  {-# INLINE pure #-}
+  {-# INLINE (*>) #-}
+  {-# INLINE liftA2 #-}
+  pure x = returnIOSTM x
+  (<*>) = ap
+  liftA2 = liftM2
+  m *> k = thenIOSTM m k
+
+instance  Monad IOSTM  where
+    {-# INLINE (>>=)  #-}
+    m >>= k     = bindIOSTM m k
+    (>>) = (*>)
+
+bindIOSTM :: IOSTM a -> (a -> IOSTM b) -> IOSTM b
+bindIOSTM (IOSTM m) k = IOSTM ( \s ->
+  case m s of
+    (# new_s, a #) -> unIOSTM (k a) new_s
+  )
+
+thenIOSTM :: IOSTM a -> IOSTM b -> IOSTM b
+thenIOSTM (IOSTM m) k = IOSTM ( \s ->
+  case m s of
+    (# new_s, _ #) -> unIOSTM k new_s
+  )
+
+returnIOSTM :: a -> IOSTM a
+returnIOSTM x = IOSTM (\s -> (# s, x #))
+
+performIO :: IOSTM a -> STM a
+performIO m = STM $ \s# -> performIO# (unIOSTM m) s#
+
+runIO :: IO a -> IOSTM a
+runIO (IO ac) = IOSTM ac
+
+addCommitHandler :: IO () -> IOSTM ()
+addCommitHandler commit = IOSTM $ \s -> case (addCommitHandler# (unIO commit)) s of s' -> (# s', () #)
+
+addAbortHandler :: IO () -> IOSTM ()
+addAbortHandler undo = IOSTM $ \s -> case (addAbortHandler# (unIO undo)) s of s' -> (# s', () #)
+
+abort :: IOSTM a
+abort = IOSTM $ \s# -> abort# s#
+
+newTBSTM :: IO(Maybe a) -> (a -> IO ()) -> IO () -> STM a
+newTBSTM iomac undo commit = performIO $ do
+  mac <- runIO iomac
+  case mac of
+    Just ac -> addHandlers ac
+    Nothing -> abort
+  where
+    addHandlers ac = do
+      addCommitHandler commit
+      addAbortHandler $ undo ac
+      return ac
 
 -----------------------------------------------------------------------------
 -- MVar utilities
